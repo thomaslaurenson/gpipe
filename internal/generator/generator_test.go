@@ -30,8 +30,6 @@ func minimalCfg(t *testing.T) (*config.Config, string) {
 	return cfg, dir
 }
 
-// --- No leftover markers ---
-
 func TestGenerate_NoLeftoverMarkers(t *testing.T) {
 	cfg, _ := minimalCfg(t)
 	out, err := generator.Generate(cfg, config.ModeNormal)
@@ -46,8 +44,6 @@ func TestGenerate_NoLeftoverMarkers(t *testing.T) {
 	}
 }
 
-// --- Checksum format ---
-
 func TestGenerate_ChecksumFormat(t *testing.T) {
 	cfg, _ := minimalCfg(t)
 	out, err := generator.Generate(cfg, config.ModeNormal)
@@ -59,7 +55,7 @@ func TestGenerate_ChecksumFormat(t *testing.T) {
 	if len(lines) != 1 {
 		t.Fatalf("expected 1 checksum line, got %d", len(lines))
 	}
-	// Format: "<64 hex chars>  <filename>"
+	// Format: "<64 hex chars> <filename>"
 	parts := strings.SplitN(lines[0], "  ", 2)
 	if len(parts) != 2 {
 		t.Fatalf("checksum line not in sha256sum format: %q", lines[0])
@@ -72,11 +68,9 @@ func TestGenerate_ChecksumFormat(t *testing.T) {
 	}
 }
 
-// --- Completion blocks ---
-
 func TestGenerate_CompletionBlockAbsentWhenDisabled(t *testing.T) {
 	cfg, _ := minimalCfg(t)
-	// All completions default false — no blocks should appear.
+	// All completions default false, no blocks should appear
 	out, err := generator.Generate(cfg, config.ModeNormal)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -109,8 +103,6 @@ func TestGenerate_CompletionBlockPresentWhenEnabled(t *testing.T) {
 		t.Error("install.sh should contain zsh completion block when enabled")
 	}
 }
-
-// --- Hook injection ---
 
 func TestGenerate_HookInjectedAndWrapped(t *testing.T) {
 	cfg, dir := minimalCfg(t)
@@ -163,8 +155,6 @@ func TestGenerate_BashSyntaxErrorInHookFails(t *testing.T) {
 	}
 }
 
-// --- Dry-run ---
-
 func TestGenerate_DryRunSkipsMissingBinary(t *testing.T) {
 	cfg := &config.Config{
 		Repo:        "owner/mycli",
@@ -185,8 +175,6 @@ func TestGenerate_DryRunSkipsMissingBinary(t *testing.T) {
 		t.Errorf("expected empty checksums for missing binary in dry-run, got: %q", out.Checksums)
 	}
 }
-
-// --- Generated-by header ---
 
 func TestGenerate_HeaderPresent(t *testing.T) {
 	cfg, _ := minimalCfg(t)

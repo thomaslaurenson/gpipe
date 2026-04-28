@@ -34,10 +34,10 @@ Outputs `install.sh`, `install.ps1`, and `checksums.txt` in the current director
 ## `.gpipe.yml` Reference
 
 ```yaml
-binary: mycli              # required — canonical binary name
-install-name: mycli        # optional — name on disk after install (defaults to binary)
+binary: mycli              # required, canonical binary name
+install-name: mycli        # optional, name on disk after install (defaults to binary)
 
-platforms:                 # required — map of platform → local binary path
+platforms:                 # required, map of platform to local binary path
   linux_amd64:   ./dist/mycli-linux-x86_64
   linux_arm64:   ./dist/mycli-linux-aarch64
   darwin_amd64:  ./dist/mycli-macos-x86_64

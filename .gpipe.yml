@@ -1,4 +1,4 @@
-# .gpipe.yml — example config for the gpipe project itself
+# .gpipe.yml: example config for the gpipe project itself
 
 binary: gpipe
 # install-name: gpipe  # optional; defaults to binary if omitted
