@@ -1,0 +1,23 @@
+# .gpipe.yml — example config for the gpipe project itself
+
+binary: gpipe
+# install-name: gpipe  # optional; defaults to binary if omitted
+
+platforms:
+  linux_amd64: ./dist/gpipe-linux-x86_64
+  linux_arm64: ./dist/gpipe-linux-aarch64
+  darwin_amd64: ./dist/gpipe-macos-x86_64
+  darwin_arm64: ./dist/gpipe-macos-arm64
+  windows_amd64: ./dist/gpipe-windows-x86_64.exe
+  windows_arm64: ./dist/gpipe-windows-aarch64.exe
+
+# hooks:
+#   pre-sh:   .gpipe/pre-install.sh
+#   post-sh:  .gpipe/post-install.sh
+#   post-ps1: .gpipe/post-install.ps1
+
+# completions:
+#   bash:        false
+#   zsh:         false
+#   fish:        false
+#   powershell:  false
