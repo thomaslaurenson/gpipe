@@ -1,4 +1,4 @@
-package generator_test
+package gpipe_test
 
 import (
 	"os"
@@ -6,12 +6,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/thomaslaurenson/gpipe/internal/config"
-	"github.com/thomaslaurenson/gpipe/internal/generator"
+	gpipe "github.com/thomaslaurenson/gpipe/internal"
 )
 
-// minimalCfg returns a config pointing at real temp binary files.
-func minimalCfg(t *testing.T) (*config.Config, string) {
+// testTemplateFS points at the root templates/ directory
+// During go test, the working directory is set to the package source directory (internal/),
+// so ../templates resolves to the repo-root templates/ folder
+var testTemplateFS = os.DirFS("../templates")
+
+// minimalCfg returns a config pointing at real temp binary files
+func minimalCfg(t *testing.T) (*gpipe.Config, string) {
 	t.Helper()
 	dir := t.TempDir()
 
@@ -20,8 +24,8 @@ func minimalCfg(t *testing.T) (*config.Config, string) {
 		t.Fatal(err)
 	}
 
-	cfg := &config.Config{
-		Repo:        "owner/mycli",
+	cfg := &gpipe.Config{
+		GithubRepo:  "owner/mycli",
 		Version:     "v1.2.3",
 		Binary:      "mycli",
 		InstallName: "mycli",
@@ -32,7 +36,7 @@ func minimalCfg(t *testing.T) (*config.Config, string) {
 
 func TestGenerate_NoLeftoverMarkers(t *testing.T) {
 	cfg, _ := minimalCfg(t)
-	out, err := generator.Generate(cfg, config.ModeNormal)
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -46,7 +50,7 @@ func TestGenerate_NoLeftoverMarkers(t *testing.T) {
 
 func TestGenerate_ChecksumFormat(t *testing.T) {
 	cfg, _ := minimalCfg(t)
-	out, err := generator.Generate(cfg, config.ModeNormal)
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -71,7 +75,7 @@ func TestGenerate_ChecksumFormat(t *testing.T) {
 func TestGenerate_CompletionBlockAbsentWhenDisabled(t *testing.T) {
 	cfg, _ := minimalCfg(t)
 	// All completions default false, no blocks should appear
-	out, err := generator.Generate(cfg, config.ModeNormal)
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -91,7 +95,7 @@ func TestGenerate_CompletionBlockPresentWhenEnabled(t *testing.T) {
 	cfg.Completions.Bash = true
 	cfg.Completions.Zsh = true
 
-	out, err := generator.Generate(cfg, config.ModeNormal)
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -111,7 +115,7 @@ func TestGenerate_HookInjectedAndWrapped(t *testing.T) {
 	os.WriteFile(hookPath, []byte("echo 'post hook'\n"), 0o644)
 	cfg.Hooks.PostSh = hookPath
 
-	out, err := generator.Generate(cfg, config.ModeNormal)
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -129,7 +133,7 @@ func TestGenerate_HookInjectedAndWrapped(t *testing.T) {
 
 func TestGenerate_NoHookLeavesNoMarker(t *testing.T) {
 	cfg, _ := minimalCfg(t)
-	out, err := generator.Generate(cfg, config.ModeNormal)
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -146,7 +150,7 @@ func TestGenerate_BashSyntaxErrorInHookFails(t *testing.T) {
 	os.WriteFile(hookPath, []byte("if [\n"), 0o644) // intentionally broken bash
 	cfg.Hooks.PreSh = hookPath
 
-	_, err := generator.Generate(cfg, config.ModeNormal)
+	_, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 	if err == nil {
 		t.Fatal("expected error for bash syntax error in hook, got nil")
 	}
@@ -156,8 +160,8 @@ func TestGenerate_BashSyntaxErrorInHookFails(t *testing.T) {
 }
 
 func TestGenerate_DryRunSkipsMissingBinary(t *testing.T) {
-	cfg := &config.Config{
-		Repo:        "owner/mycli",
+	cfg := &gpipe.Config{
+		GithubRepo:  "owner/mycli",
 		Version:     "v1.2.3",
 		Binary:      "mycli",
 		InstallName: "mycli",
@@ -166,11 +170,11 @@ func TestGenerate_DryRunSkipsMissingBinary(t *testing.T) {
 		},
 	}
 
-	out, err := generator.Generate(cfg, config.ModeDryRun)
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeDryRun)
 	if err != nil {
 		t.Fatalf("dry-run should not error on missing binary, got: %v", err)
 	}
-	// Checksums should be empty since no binary was found.
+	// Checksums should be empty since no binary was found
 	if strings.TrimSpace(out.Checksums) != "" {
 		t.Errorf("expected empty checksums for missing binary in dry-run, got: %q", out.Checksums)
 	}
@@ -178,7 +182,7 @@ func TestGenerate_DryRunSkipsMissingBinary(t *testing.T) {
 
 func TestGenerate_HeaderPresent(t *testing.T) {
 	cfg, _ := minimalCfg(t)
-	out, err := generator.Generate(cfg, config.ModeNormal)
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

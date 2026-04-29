@@ -6,8 +6,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/thomaslaurenson/gpipe/internal/config"
-	"github.com/thomaslaurenson/gpipe/internal/generator"
+	gpipe "github.com/thomaslaurenson/gpipe/internal"
 )
 
 var generateCmd = &cobra.Command{
@@ -37,28 +36,28 @@ func init() {
 }
 
 func runGenerate(cmd *cobra.Command, args []string) error {
-	cfg, err := config.LoadConfig(generateFlags.configPath)
+	cfg, err := gpipe.LoadConfig(generateFlags.configPath)
 	if err != nil {
 		return err
 	}
 
-	config.MergeFlags(cfg, config.FlagValues{
-		Repo:        generateFlags.repo,
+	gpipe.MergeFlags(cfg, gpipe.FlagValues{
+		GithubRepo:  generateFlags.repo,
 		Version:     generateFlags.version,
 		Binary:      generateFlags.binary,
 		InstallName: generateFlags.installName,
 	})
 
-	mode := config.ModeNormal
+	mode := gpipe.ModeNormal
 	if generateFlags.dryRun {
-		mode = config.ModeDryRun
+		mode = gpipe.ModeDryRun
 	}
 
-	if errs := config.Validate(cfg, mode); len(errs) > 0 {
+	if errs := gpipe.Validate(cfg, mode); len(errs) > 0 {
 		return fmt.Errorf("validation failed:\n%s", joinErrors(errs))
 	}
 
-	out, err := generator.Generate(cfg, mode)
+	out, err := gpipe.Generate(cfg, templateFS, mode)
 	if err != nil {
 		return err
 	}

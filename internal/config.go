@@ -1,4 +1,4 @@
-package config
+package gpipe
 
 import (
 	"errors"
@@ -11,7 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ValidationMode controls how strict validation is.
+// ValidationMode controls how strict validation is
 type ValidationMode int
 
 const (
@@ -20,7 +20,7 @@ const (
 	ModeDryRun   ValidationMode = iota
 )
 
-// ValidPlatforms lists all supported platform identifiers in canonical order.
+// ValidPlatforms lists all supported platform identifiers in canonical order
 var ValidPlatforms = []string{
 	"linux_amd64",
 	"linux_arm64",
@@ -39,7 +39,7 @@ var semverRelaxedPattern = regexp.MustCompile(`^v?[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-
 // repoPattern matches owner/repo
 var repoPattern = regexp.MustCompile(`^[^/\s]+/[^/\s]+$`)
 
-// Hooks holds optional hook file paths.
+// Hooks holds optional hook file paths
 type Hooks struct {
 	PreSh   string `yaml:"pre-sh"`
 	PostSh  string `yaml:"post-sh"`
@@ -47,7 +47,7 @@ type Hooks struct {
 	PostPs1 string `yaml:"post-ps1"`
 }
 
-// Completions holds per-shell completion flags.
+// Completions holds per-shell completion flags
 type Completions struct {
 	Bash       bool `yaml:"bash"`
 	Zsh        bool `yaml:"zsh"`
@@ -55,7 +55,7 @@ type Completions struct {
 	PowerShell bool `yaml:"powershell"`
 }
 
-// Config holds the merged configuration from .gpipe.yml and CLI flags.
+// Config holds the merged configuration from .gpipe.yml and CLI flags
 type Config struct {
 	Binary      string            `yaml:"binary"`
 	InstallName string            `yaml:"install-name"`
@@ -63,21 +63,21 @@ type Config struct {
 	Hooks       Hooks             `yaml:"hooks"`
 	Completions Completions       `yaml:"completions"`
 
-	// Runtime fields set via CLI flags, not present in YAML.
-	Repo    string `yaml:"-"`
-	Version string `yaml:"-"`
+	// Runtime fields set via CLI flags, not present in YAML
+	GithubRepo string `yaml:"-"`
+	Version    string `yaml:"-"`
 }
 
-// FlagValues holds CLI flag overrides.
+// FlagValues holds CLI flag overrides
 type FlagValues struct {
-	Repo        string
+	GithubRepo  string
 	Version     string
 	Binary      string
 	InstallName string
 }
 
-// LoadConfig reads and parses a .gpipe.yml file.
-// Returns an empty Config (not nil) if the file does not exist.
+// LoadConfig reads and parses a .gpipe.yml file
+// Returns an empty Config (not nil) if the file does not exist
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -94,11 +94,11 @@ func LoadConfig(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// MergeFlags applies CLI flag overrides on top of a loaded config.
-// install-name defaults to binary if neither is set via flag or config.
+// MergeFlags applies CLI flag overrides on top of a loaded config
+// install-name defaults to binary if neither is set via flag or config
 func MergeFlags(cfg *Config, flags FlagValues) {
-	if flags.Repo != "" {
-		cfg.Repo = flags.Repo
+	if flags.GithubRepo != "" {
+		cfg.GithubRepo = flags.GithubRepo
 	}
 	if flags.Version != "" {
 		cfg.Version = flags.Version
@@ -114,15 +114,15 @@ func MergeFlags(cfg *Config, flags FlagValues) {
 	}
 }
 
-// Validate checks the config for correctness and returns a slice of errors.
-// Returns nil if all checks pass.
+// Validate checks the config for correctness and returns a slice of errors
+// Returns nil if all checks pass
 func Validate(cfg *Config, mode ValidationMode) []error {
 	var errs []error
 
-	if cfg.Repo == "" {
+	if cfg.GithubRepo == "" {
 		errs = append(errs, errors.New("missing required field: repo"))
-	} else if !repoPattern.MatchString(cfg.Repo) {
-		errs = append(errs, fmt.Errorf("invalid repo %q: expected owner/repo format", cfg.Repo))
+	} else if !repoPattern.MatchString(cfg.GithubRepo) {
+		errs = append(errs, fmt.Errorf("invalid repo %q: expected owner/repo format", cfg.GithubRepo))
 	}
 
 	if cfg.Version == "" {
@@ -168,7 +168,7 @@ func Validate(cfg *Config, mode ValidationMode) []error {
 		errs = append(errs, err)
 	}
 
-	// In normal mode, verify binary files exist on disk.
+	// In normal mode, verify binary files exist on disk
 	if mode == ModeNormal {
 		for platform, path := range cfg.Platforms {
 			if path == "" {
