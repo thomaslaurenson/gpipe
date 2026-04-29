@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/thomaslaurenson/gpipe/internal/config"
+	gpipe "github.com/thomaslaurenson/gpipe/internal"
 )
 
 var validateCmd = &cobra.Command{
@@ -30,17 +30,17 @@ func init() {
 }
 
 func runValidate(cmd *cobra.Command, args []string) error {
-	cfg, err := config.LoadConfig(validateFlags.configPath)
+	cfg, err := gpipe.LoadConfig(validateFlags.configPath)
 	if err != nil {
 		return err
 	}
 
-	config.MergeFlags(cfg, config.FlagValues{
-		Repo:    validateFlags.repo,
-		Version: validateFlags.version,
+	gpipe.MergeFlags(cfg, gpipe.FlagValues{
+		GithubRepo: validateFlags.repo,
+		Version:    validateFlags.version,
 	})
 
-	if errs := config.Validate(cfg, config.ModeValidate); len(errs) > 0 {
+	if errs := gpipe.Validate(cfg, gpipe.ModeValidate); len(errs) > 0 {
 		return fmt.Errorf("validation failed:\n%s", joinErrors(errs))
 	}
 
