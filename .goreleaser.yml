@@ -10,6 +10,7 @@ builds:
   - id: gpipe
     main: .
     binary: gpipe
+    mod_timestamp: "{{ .CommitTimestamp }}"
     ldflags:
       - -s -w
       - -X github.com/thomaslaurenson/gpipe/cmd.Version={{.Version}}
@@ -52,7 +53,7 @@ signs:
     output: true
 
 changelog:
-  sort: asc
+  sort: desc
   use: conventional-commits
   filters:
     exclude:

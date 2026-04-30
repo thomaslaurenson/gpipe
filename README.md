@@ -26,7 +26,7 @@ platforms:
 ```
 
 ```bash
-go run github.com/thomaslaurenson/gpipe --repo owner/mycli --version v1.2.3
+go run github.com/thomaslaurenson/gpipe generate --repo owner/mycli --version v1.2.3
 ```
 
 Outputs `install.sh`, `install.ps1`, and `checksums.txt` in the current directory.
@@ -36,6 +36,9 @@ Outputs `install.sh`, `install.ps1`, and `checksums.txt` in the current director
 ```yaml
 binary: mycli              # required, canonical binary name
 install-name: mycli        # optional, name on disk after install (defaults to binary)
+repo: owner/mycli          # optional, GitHub repo in owner/repo format; CLI --repo always overrides
+version: v1.2.3            # optional, release version tag; CLI --version always overrides
+sign: false                # optional, run cosign on generated checksums.txt; CLI --sign always overrides
 
 platforms:                 # required, map of platform to local binary path
   linux_amd64:   ./dist/mycli-linux-x86_64
@@ -93,10 +96,10 @@ Enable per-shell completions in `.gpipe.yml`. The generated script runs `{binary
 
 ```bash
 # Validate config and hooks only (no files generated)
-go run github.com/thomaslaurenson/gpipe --validate
+go run github.com/thomaslaurenson/gpipe validate
 
 # Full local generation with partial asset support
-go run github.com/thomaslaurenson/gpipe --dry-run --version v0.0.0-dry-run --repo owner/mycli
+go run github.com/thomaslaurenson/gpipe generate --dry-run --version v0.0.0-dry-run --repo owner/mycli
 ```
 
 `--validate` is suitable as a pre-commit hook or CI lint step.
