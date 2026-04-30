@@ -1,0 +1,63 @@
+version: 2
+
+project_name: gpipe
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: gpipe
+    main: .
+    binary: gpipe
+    ldflags:
+      - -s -w
+      - -X github.com/thomaslaurenson/gpipe/cmd.Version={{.Version}}
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: gpipe
+    format: binary
+    name_template: >-
+      gpipe-
+      {{- if eq .Os "linux"}}linux{{- end}}
+      {{- if eq .Os "darwin"}}macos{{- end}}
+      {{- if eq .Os "windows"}}windows{{- end}}
+      -
+      {{- if eq .Arch "amd64"}}x86_64{{- end}}
+      {{- if eq .Arch "arm64"}}aarch64{{- end}}
+      {{- if eq .Os "windows"}}.exe{{- end}}
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+signs:
+  - cmd: cosign
+    args:
+      - sign-blob
+      - --yes
+      - --output-certificate=${certificate}
+      - --output-signature=${signature}
+      - ${artifact}
+    artifacts: checksum
+    output: true
+
+changelog:
+  sort: asc
+  use: conventional-commits
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
