@@ -156,6 +156,20 @@ func Validate(cfg *Config, mode ValidationMode) []error {
 					platform, strings.Join(ValidPlatforms, ", ")))
 			}
 		}
+		// Asset name uniqueness: two platforms must not resolve to the same filename
+		seen := make(map[string]string) // assetName -> first platform ID
+		for _, p := range ValidPlatforms {
+			path, ok := cfg.Platforms[p]
+			if !ok {
+				continue
+			}
+			assetName := filepath.Base(path)
+			if first, dup := seen[assetName]; dup {
+				errs = append(errs, fmt.Errorf("platforms %q and %q resolve to the same asset name %q: asset names must be unique", first, p, assetName))
+			} else {
+				seen[assetName] = p
+			}
+		}
 	}
 
 	if err := validateHookFile(cfg.Hooks.PreSh, "pre-sh", ".sh"); err != nil {

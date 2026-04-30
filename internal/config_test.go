@@ -301,6 +301,30 @@ func TestMergeFlags_CLIOverridesConfigRepoAndVersion(t *testing.T) {
 	}
 }
 
+func TestValidate_DuplicateAssetNames(t *testing.T) {
+	cfg := minimalValidConfig()
+	cfg.Platforms = map[string]string{
+		"linux_amd64": "/dist/my-tool",
+		"linux_arm64": "/dist/my-tool",
+	}
+	errs := gpipe.Validate(cfg, gpipe.ModeValidate)
+	assertContainsError(t, errs, "resolve to the same asset name")
+}
+
+func TestValidate_UniqueAssetNamesNoError(t *testing.T) {
+	cfg := minimalValidConfig()
+	cfg.Platforms = map[string]string{
+		"linux_amd64": "/dist/my-tool-x86_64",
+		"linux_arm64": "/dist/my-tool-aarch64",
+	}
+	errs := gpipe.Validate(cfg, gpipe.ModeValidate)
+	for _, e := range errs {
+		if contains(e.Error(), "resolve to the same asset name") {
+			t.Errorf("unique asset names should not trigger uniqueness error, got: %v", e)
+		}
+	}
+}
+
 func assertContainsError(t *testing.T, errs []error, substr string) {
 	t.Helper()
 	for _, e := range errs {
