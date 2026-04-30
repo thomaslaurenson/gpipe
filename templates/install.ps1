@@ -3,7 +3,8 @@
 
 param(
     [switch]$User,
-    [switch]$Help
+    [switch]$Help,
+    [switch]$Verify
 )
 
 $ErrorActionPreference = "Stop"
@@ -33,12 +34,16 @@ function Show-Help {
 ${InstallName} installer
 
 USAGE:
-  .\install.ps1 [-User] [-Help]
+  .\install.ps1 [-User] [-Verify] [-Help]
 
 OPTIONS:
-  -User    Install to user directory (no elevation required)
-           Default path: $env:LOCALAPPDATA\Programs\${InstallName}
-  -Help    Show this help message
+  -User      Install to user directory (no elevation required)
+             Default path: $env:LOCALAPPDATA\Programs\${InstallName}
+  -Verify    Verify cosign signature on checksums.txt before installing
+             Requires cosign: https://docs.sigstore.dev/cosign/system_config/installation/
+             To verify manually:
+               cosign verify-blob --certificate-identity-regexp='.*' --certificate-oidc-issuer-regexp='.*' checksums.txt
+  -Help      Show this help message
 
 EXAMPLES:
   # System-wide install (default, prompts for elevation if not Administrator)
@@ -46,6 +51,9 @@ EXAMPLES:
 
   # User install, no elevation needed
   .\install.ps1 -User
+
+  # Install with cosign signature verification
+  .\install.ps1 -Verify
 
   # Piped user install
   Invoke-WebRequest -Uri "https://github.com/${Repo}/releases/download/${Version}/install.ps1" ``
@@ -134,7 +142,19 @@ try {
     }
     Write-Step "Checksum OK"
 
-    # Determine install location; handle elevation when needed
+    # Cosign signature verification (only when -Verify is passed)
+    if ($Verify) {
+        if (-not (Get-Command cosign -ErrorAction SilentlyContinue)) {
+            Exit-Error "-Verify requires cosign, which was not found in PATH.`n  Install cosign: https://docs.sigstore.dev/cosign/system_config/installation/"
+        }
+        Write-Info "Verifying cosign signature on checksums.txt..."
+        cosign verify-blob `
+            --certificate-identity-regexp='.*' `
+            --certificate-oidc-issuer-regexp='.*' `
+            "$TmpDir\checksums.txt"
+        if ($LASTEXITCODE -ne 0) { Exit-Error "cosign signature verification failed" }
+        Write-Step "Cosign signature OK"
+    }
     $UserInstall = $User.IsPresent
     $InstallDir  = ""
 
