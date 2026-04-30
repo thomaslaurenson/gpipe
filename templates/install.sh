@@ -41,6 +41,10 @@ OPTIONS:
   -h, --help    Show this help message
   --user        Install to ~/.local/bin (no sudo required)
   --system      Install to /usr/local/bin (default, may require sudo)
+  --verify      Verify cosign signature on checksums.txt before installing
+                Requires cosign: https://docs.sigstore.dev/cosign/system_config/installation/
+                To verify manually:
+                  cosign verify-blob --certificate-identity-regexp='.*' --certificate-oidc-issuer-regexp='.*' checksums.txt
 
 EXAMPLES:
   # System-wide install (default)
@@ -49,16 +53,21 @@ EXAMPLES:
   # User-local install, no sudo needed
   curl -fsSL https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/install.sh | bash -s -- --user
 
+  # Install with cosign signature verification
+  curl -fsSL https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/install.sh | bash -s -- --verify
+
 EOF
 }
 
 # Argument parsing
 USER_INSTALL=false
+VERIFY=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -h|--help)   show_help; exit 0 ;;
     --user)      USER_INSTALL=true;  shift ;;
     --system)    USER_INSTALL=false; shift ;;
+    --verify)    VERIFY=true;        shift ;;
     *)           error "Unknown option: $1. Run with --help for usage." ;;
   esac
 done
@@ -117,9 +126,9 @@ trap 'rm -rf "$_TMPDIR"' EXIT
 _download() {
   local url="$1" dest="$2"
   if command -v curl > /dev/null 2>&1; then
-    curl -fsSL --max-time 300 "$url" -o "$dest"
+    curl -fsSL --connect-timeout 30 --speed-limit 1024 --speed-time 30 "$url" -o "$dest"
   elif command -v wget > /dev/null 2>&1; then
-    wget --timeout=300 -qO "$dest" "$url"
+    wget --connect-timeout=30 --timeout=30 -qO "$dest" "$url"
   else
     error "curl or wget is required to download files"
   fi
@@ -129,6 +138,19 @@ info "Downloading ${BINARY} ${VERSION} for ${PLATFORM}..."
 step "${DOWNLOAD_URL}"
 _download "${DOWNLOAD_URL}"  "${_TMPDIR}/${ASSET_NAME}"
 _download "${CHECKSUMS_URL}" "${_TMPDIR}/checksums.txt"
+
+# Cosign signature verification (only when --verify is passed)
+if [[ "$VERIFY" == "true" ]]; then
+  if ! command -v cosign > /dev/null 2>&1; then
+    error "--verify requires cosign, which was not found in PATH.\n  Install cosign: https://docs.sigstore.dev/cosign/system_config/installation/"
+  fi
+  info "Verifying cosign signature on checksums.txt..."
+  cosign verify-blob \
+    --certificate-identity-regexp='.*' \
+    --certificate-oidc-issuer-regexp='.*' \
+    "${_TMPDIR}/checksums.txt" || error "cosign signature verification failed"
+  step "Cosign signature OK"
+fi
 
 # Checksum verification
 info "Verifying checksum..."
