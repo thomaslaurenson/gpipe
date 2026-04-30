@@ -211,4 +211,3 @@ func SignChecksums(path string) error {
 	}
 	return nil
 }
-
