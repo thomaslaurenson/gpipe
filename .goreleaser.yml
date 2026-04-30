@@ -26,7 +26,7 @@ builds:
 
 archives:
   - id: gpipe
-    format: binary
+    formats: [binary]
     name_template: >-
       gpipe-
       {{- if eq .Os "linux"}}linux{{- end}}
@@ -54,7 +54,7 @@ signs:
 
 changelog:
   sort: desc
-  use: conventional-commits
+  use: github
   filters:
     exclude:
       - "^docs:"
