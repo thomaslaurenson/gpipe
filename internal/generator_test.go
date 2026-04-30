@@ -193,3 +193,26 @@ func TestGenerate_HeaderPresent(t *testing.T) {
 		t.Error("install.ps1 missing generated-by header")
 	}
 }
+
+func TestSignChecksums_SignFalseNoError(t *testing.T) {
+	// sign=false: Generate should succeed without cosign being present
+	cfg, _ := minimalCfg(t)
+	cfg.Sign = false
+	_, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
+	if err != nil {
+		t.Fatalf("sign=false should not require cosign, got error: %v", err)
+	}
+}
+
+func TestSignChecksums_CosignMissingReturnsError(t *testing.T) {
+	// Clear PATH so cosign cannot be found
+	t.Setenv("PATH", t.TempDir())
+
+	err := gpipe.SignChecksums("/some/checksums.txt")
+	if err == nil {
+		t.Fatal("expected error when cosign is not in PATH, got nil")
+	}
+	if !strings.Contains(err.Error(), "cosign not found") {
+		t.Errorf("expected 'cosign not found' in error, got: %v", err)
+	}
+}

@@ -24,6 +24,7 @@ var generateFlags struct {
 	binary      string
 	installName string
 	dryRun      bool
+	sign        bool
 }
 
 func init() {
@@ -33,6 +34,7 @@ func init() {
 	generateCmd.Flags().StringVar(&generateFlags.binary, "binary", "", "Binary name (overrides config)")
 	generateCmd.Flags().StringVar(&generateFlags.installName, "install-name", "", "Installed binary name on disk (overrides config)")
 	generateCmd.Flags().BoolVar(&generateFlags.dryRun, "dry-run", false, "Generate scripts without requiring all binaries to be present")
+	generateCmd.Flags().BoolVar(&generateFlags.sign, "sign", false, "Sign checksums.txt with cosign after generation (overrides config)")
 }
 
 func runGenerate(cmd *cobra.Command, args []string) error {
@@ -41,11 +43,17 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	var signFlag *bool
+	if cmd.Flags().Changed("sign") {
+		signFlag = &generateFlags.sign
+	}
+
 	gpipe.MergeFlags(cfg, gpipe.FlagValues{
 		GithubRepo:  generateFlags.repo,
 		Version:     generateFlags.version,
 		Binary:      generateFlags.binary,
 		InstallName: generateFlags.installName,
+		Sign:        signFlag,
 	})
 
 	mode := gpipe.ModeNormal
@@ -70,6 +78,12 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	}
 	if err := os.WriteFile("checksums.txt", []byte(out.Checksums), 0o644); err != nil {
 		return fmt.Errorf("writing checksums.txt: %w", err)
+	}
+
+	if cfg.Sign {
+		if err := gpipe.SignChecksums("checksums.txt"); err != nil {
+			return err
+		}
 	}
 
 	fmt.Println("generated install.sh, install.ps1, checksums.txt")

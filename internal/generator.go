@@ -198,3 +198,17 @@ func validateBashSyntax(path string) error {
 	return nil
 }
 
+// SignChecksums runs `cosign sign-blob --yes` on the given file.
+// Returns a clear error if cosign is not installed.
+func SignChecksums(path string) error {
+	cosign, err := exec.LookPath("cosign")
+	if err != nil {
+		return fmt.Errorf("cosign not found in PATH: install it from https://docs.sigstore.dev/cosign/system_config/installation/")
+	}
+	out, err := exec.Command(cosign, "sign-blob", "--yes", path).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("cosign sign-blob failed: %w\n%s", err, bytes.TrimSpace(out))
+	}
+	return nil
+}
+
