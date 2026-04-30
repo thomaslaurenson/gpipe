@@ -3,6 +3,10 @@
 binary: gpipe
 # install-name: gpipe  # optional; defaults to binary if omitted
 
+# repo: thomaslaurenson/gpipe  # optional; GitHub repo in owner/repo format. CLI --repo always overrides.
+# version: v1.0.0              # optional; release version tag. CLI --version always overrides.
+# sign: false                  # optional; run cosign on generated checksums.txt. CLI --sign always overrides.
+
 platforms:
   linux_amd64: ./dist/gpipe-linux-x86_64
   linux_arm64: ./dist/gpipe-linux-aarch64

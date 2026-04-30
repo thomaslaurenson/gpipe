@@ -62,10 +62,9 @@ type Config struct {
 	Platforms   map[string]string `yaml:"platforms"`
 	Hooks       Hooks             `yaml:"hooks"`
 	Completions Completions       `yaml:"completions"`
-
-	// Runtime fields set via CLI flags, not present in YAML
-	GithubRepo string `yaml:"-"`
-	Version    string `yaml:"-"`
+	GithubRepo  string            `yaml:"repo"`
+	Version     string            `yaml:"version"`
+	Sign        bool              `yaml:"sign"`
 }
 
 // FlagValues holds CLI flag overrides
@@ -74,6 +73,7 @@ type FlagValues struct {
 	Version     string
 	Binary      string
 	InstallName string
+	Sign        *bool
 }
 
 // LoadConfig reads and parses a .gpipe.yml file
@@ -108,6 +108,9 @@ func MergeFlags(cfg *Config, flags FlagValues) {
 	}
 	if flags.InstallName != "" {
 		cfg.InstallName = flags.InstallName
+	}
+	if flags.Sign != nil {
+		cfg.Sign = *flags.Sign
 	}
 	if cfg.InstallName == "" {
 		cfg.InstallName = cfg.Binary

@@ -24,6 +24,9 @@ func TestLoadConfig_ValidFile(t *testing.T) {
 	content := `
 binary: mycli
 install-name: cli
+repo: owner/mycli
+version: v1.2.3
+sign: true
 platforms:
   linux_amd64: ./dist/mycli-linux-x86_64
 completions:
@@ -42,6 +45,15 @@ completions:
 	}
 	if cfg.InstallName != "cli" {
 		t.Errorf("expected install-name=cli, got %q", cfg.InstallName)
+	}
+	if cfg.GithubRepo != "owner/mycli" {
+		t.Errorf("expected repo=owner/mycli, got %q", cfg.GithubRepo)
+	}
+	if cfg.Version != "v1.2.3" {
+		t.Errorf("expected version=v1.2.3, got %q", cfg.Version)
+	}
+	if !cfg.Sign {
+		t.Error("expected sign=true")
 	}
 	if cfg.Platforms["linux_amd64"] != "./dist/mycli-linux-x86_64" {
 		t.Errorf("unexpected platform path: %q", cfg.Platforms["linux_amd64"])
@@ -64,12 +76,14 @@ func TestLoadConfig_MalformedYAML(t *testing.T) {
 }
 
 func TestMergeFlags_OverridesApplied(t *testing.T) {
+	signTrue := true
 	cfg := &gpipe.Config{Binary: "old", GithubRepo: "old/old"}
 	gpipe.MergeFlags(cfg, gpipe.FlagValues{
 		GithubRepo:  "new/repo",
 		Version:     "v1.0.0",
 		Binary:      "newbinary",
 		InstallName: "newname",
+		Sign:        &signTrue,
 	})
 	if cfg.GithubRepo != "new/repo" {
 		t.Errorf("expected repo=new/repo, got %q", cfg.GithubRepo)
@@ -82,6 +96,9 @@ func TestMergeFlags_OverridesApplied(t *testing.T) {
 	}
 	if cfg.InstallName != "newname" {
 		t.Errorf("expected install-name=newname, got %q", cfg.InstallName)
+	}
+	if !cfg.Sign {
+		t.Error("expected sign=true")
 	}
 }
 
@@ -224,6 +241,63 @@ func TestValidate_ValidateModeIgnoresMissingBinaryFiles(t *testing.T) {
 		if contains(e.Error(), "binary file for platform") {
 			t.Errorf("validate mode should not check binary file existence, got: %v", e)
 		}
+	}
+}
+
+func TestMergeFlags_SignNilDoesNotOverride(t *testing.T) {
+	cfg := &gpipe.Config{Sign: true}
+	gpipe.MergeFlags(cfg, gpipe.FlagValues{})
+	if !cfg.Sign {
+		t.Error("nil Sign flag should not override config sign=true")
+	}
+}
+
+func TestMergeFlags_SignFalseOverridesTrue(t *testing.T) {
+	signFalse := false
+	cfg := &gpipe.Config{Sign: true}
+	gpipe.MergeFlags(cfg, gpipe.FlagValues{Sign: &signFalse})
+	if cfg.Sign {
+		t.Error("Sign=false flag should override config sign=true")
+	}
+}
+
+func TestLoadConfig_RepoVersionSignFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".gpipe.yml")
+	content := `
+binary: tool
+repo: myorg/tool
+version: v2.0.0
+sign: true
+platforms:
+  linux_amd64: ./dist/tool
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := gpipe.LoadConfig(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.GithubRepo != "myorg/tool" {
+		t.Errorf("expected repo=myorg/tool, got %q", cfg.GithubRepo)
+	}
+	if cfg.Version != "v2.0.0" {
+		t.Errorf("expected version=v2.0.0, got %q", cfg.Version)
+	}
+	if !cfg.Sign {
+		t.Error("expected sign=true from YAML")
+	}
+}
+
+func TestMergeFlags_CLIOverridesConfigRepoAndVersion(t *testing.T) {
+	cfg := &gpipe.Config{GithubRepo: "yaml/repo", Version: "v1.0.0"}
+	gpipe.MergeFlags(cfg, gpipe.FlagValues{GithubRepo: "cli/repo", Version: "v2.0.0"})
+	if cfg.GithubRepo != "cli/repo" {
+		t.Errorf("CLI --repo should override config repo, got %q", cfg.GithubRepo)
+	}
+	if cfg.Version != "v2.0.0" {
+		t.Errorf("CLI --version should override config version, got %q", cfg.Version)
 	}
 }
 
