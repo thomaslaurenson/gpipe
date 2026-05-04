@@ -29,13 +29,13 @@ archives:
     formats: [binary]
     name_template: >-
       gpipe-
-      {{- if eq .Os "linux"}}linux{{- end}}
-      {{- if eq .Os "darwin"}}macos{{- end}}
-      {{- if eq .Os "windows"}}windows{{- end}}
-      -
-      {{- if eq .Arch "amd64"}}x86_64{{- end}}
-      {{- if eq .Arch "arm64"}}aarch64{{- end}}
-      {{- if eq .Os "windows"}}.exe{{- end}}
+      {{- if eq .Os "linux"}}linux
+      {{- else if eq .Os "darwin"}}macos
+      {{- else if eq .Os "windows"}}windows
+      {{- end}}-
+      {{- if eq .Arch "amd64"}}x86_64
+      {{- else if eq .Arch "arm64"}}aarch64
+      {{- end}}
 
 checksum:
   name_template: checksums.txt
