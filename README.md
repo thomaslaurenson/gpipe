@@ -17,12 +17,21 @@ Automated, cross-platform, language-agnostic, opionated installer file generatio
 binary: mycli
 
 platforms:
-  linux_amd64: ./dist/mycli-linux-x86_64
-  linux_arm64: ./dist/mycli-linux-aarch64
-  darwin_amd64: ./dist/mycli-macos-x86_64
-  darwin_arm64: ./dist/mycli-macos-arm64
-  windows_amd64: ./dist/mycli-windows-x86_64.exe
-  windows_arm64: ./dist/mycli-windows-aarch64.exe
+  linux_amd64:
+    path: ./dist/mycli_linux_amd64_v1/mycli
+    name: mycli-linux-x86_64
+  linux_arm64:
+    path: ./dist/mycli_linux_arm64_v8.0/mycli
+    name: mycli-linux-aarch64
+  darwin_amd64:
+    path: ./dist/mycli_darwin_amd64_v1/mycli
+    name: mycli-darwin-x86_64
+  darwin_arm64:
+    path: ./dist/mycli_darwin_arm64_v8.0/mycli
+    name: mycli-darwin-aarch64
+  windows_amd64:
+    path: ./dist/mycli_windows_amd64_v1/mycli.exe
+    name: mycli-windows-x86_64.exe
 ```
 
 ```bash
@@ -40,13 +49,25 @@ repo: owner/mycli          # optional, GitHub repo in owner/repo format; CLI --r
 version: v1.2.3            # optional, release version tag; CLI --version always overrides
 sign: false                # optional, run cosign on generated checksums.txt; CLI --sign always overrides
 
-platforms:                 # required, map of platform to local binary path
-  linux_amd64:   ./dist/mycli-linux-x86_64
-  linux_arm64:   ./dist/mycli-linux-aarch64
-  darwin_amd64:  ./dist/mycli-macos-x86_64
-  darwin_arm64:  ./dist/mycli-macos-arm64
-  windows_amd64: ./dist/mycli-windows-x86_64.exe
-  windows_arm64: ./dist/mycli-windows-aarch64.exe
+platforms:                 # required, map of platform to path/name entry
+  linux_amd64:
+    path: ./dist/mycli_linux_amd64_v1/mycli      # local binary path
+    name: mycli-linux-x86_64                      # GitHub release asset name
+  linux_arm64:
+    path: ./dist/mycli_linux_arm64_v8.0/mycli
+    name: mycli-linux-aarch64
+  darwin_amd64:
+    path: ./dist/mycli_darwin_amd64_v1/mycli
+    name: mycli-darwin-x86_64
+  darwin_arm64:
+    path: ./dist/mycli_darwin_arm64_v8.0/mycli
+    name: mycli-darwin-aarch64
+  windows_amd64:
+    path: ./dist/mycli_windows_amd64_v1/mycli.exe
+    name: mycli-windows-x86_64.exe
+  windows_arm64:
+    path: ./dist/mycli_windows_arm64_v8.0/mycli.exe
+    name: mycli-windows-aarch64.exe
 
 hooks:
   pre-sh:   .gpipe/pre-install.sh    # injected before download in install.sh
@@ -106,7 +127,7 @@ go run github.com/thomaslaurenson/gpipe generate --dry-run --version v0.0.0-dry-
 
 ## Asset Naming
 
-gpipe does not impose any naming convention on binary files. The asset name used in download URLs is derived from the filename of the mapped path in `.gpipe.yml`.
+The `name` field in each platform entry controls the asset filename used in download URLs. It does not need to match the local file path — this allows tools like GoReleaser (which places binaries in subdirectories) to work without a staging step.
 
 ## gpipe-action
 

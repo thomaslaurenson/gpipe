@@ -32,3 +32,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+
+      - uses: thomaslaurenson/gpipe-action@v1
+        with:
+          cosign_sign: true
+
+      - name: Upload install scripts to release
+        shell: bash
+        run: |
+          gh release upload "${{ github.ref_name }}" install.sh install.ps1 checksums.txt --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
