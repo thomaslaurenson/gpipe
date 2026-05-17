@@ -16,7 +16,7 @@ import (
 type ValidationMode int
 
 const (
-	ModeNormal   ValidationMode = iota
+	ModeNormal ValidationMode = iota
 	ModeValidate
 	ModeDryRun
 )
