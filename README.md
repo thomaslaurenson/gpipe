@@ -1,10 +1,10 @@
 # gpipe
 
-![Build Status](https://img.shields.io/github/actions/workflow/status/thomaslaurenson/gpipe/tag.yml?style=flat) ![Test Status](https://img.shields.io/github/actions/workflow/status/thomaslaurenson/gpipe/tag.yml?style=flat&label=test)
+![Build Status](https://img.shields.io/github/actions/workflow/status/thomaslaurenson/gpipe/tag.yml?style=flat&logo=github) ![Test Status](https://img.shields.io/github/actions/workflow/status/thomaslaurenson/gpipe/tag.yml?style=flat&label=test&logo=github)
 
-![Release Version](https://img.shields.io/github/v/release/thomaslaurenson/gpipe?style=flat) ![Release Downloads](https://img.shields.io/github/downloads/thomaslaurenson/gpipe/total?label=downloads)
+![Release Version](https://img.shields.io/github/v/release/thomaslaurenson/gpipe?style=flat&logo=github) ![Release downloads](https://img.shields.io/github/downloads/thomaslaurenson/gpipe/total?label=downloads&logo=github)
 
-![Go Version](https://img.shields.io/github/go-mod/go-version/thomaslaurenson/gpipe) ![Code Coverage](https://img.shields.io/badge/coverage-60%25-blue)
+![Go Version](https://img.shields.io/github/go-mod/go-version/thomaslaurenson/gpipe?logo=go) ![Code Coverage](https://img.shields.io/badge/Coverage-60%25-blue?logo=go)
 
 Automated, cross-platform, language-agnostic, opionated installer file generation for GitHub binaries
 
