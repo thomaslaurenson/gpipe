@@ -56,16 +56,22 @@ type Completions struct {
 	PowerShell bool `yaml:"powershell"`
 }
 
+// PlatformEntry holds the local binary path and the GitHub release asset name for a platform.
+type PlatformEntry struct {
+	Path string `yaml:"path"`
+	Name string `yaml:"name"`
+}
+
 // Config holds the merged configuration from .gpipe.yml and CLI flags.
 type Config struct {
-	Binary      string            `yaml:"binary"`
-	InstallName string            `yaml:"install-name"`
-	Platforms   map[string]string `yaml:"platforms"`
-	Hooks       Hooks             `yaml:"hooks"`
-	Completions Completions       `yaml:"completions"`
-	GithubRepo  string            `yaml:"repo"`
-	Version     string            `yaml:"version"`
-	Sign        bool              `yaml:"sign"`
+	Binary      string                   `yaml:"binary"`
+	InstallName string                   `yaml:"install-name"`
+	Platforms   map[string]PlatformEntry `yaml:"platforms"`
+	Hooks       Hooks                    `yaml:"hooks"`
+	Completions Completions              `yaml:"completions"`
+	GithubRepo  string                   `yaml:"repo"`
+	Version     string                   `yaml:"version"`
+	Sign        bool                     `yaml:"sign"`
 }
 
 // FlagValues holds CLI flag overrides.
@@ -163,15 +169,14 @@ func Validate(cfg *Config, mode ValidationMode) []error {
 		// Asset name uniqueness: two platforms must not resolve to the same filename
 		seen := make(map[string]string) // assetName -> first platform ID
 		for _, p := range ValidPlatforms {
-			path, ok := cfg.Platforms[p]
+			entry, ok := cfg.Platforms[p]
 			if !ok {
 				continue
 			}
-			assetName := filepath.Base(path)
-			if first, dup := seen[assetName]; dup {
-				errs = append(errs, fmt.Errorf("platforms %q and %q resolve to the same asset name %q: asset names must be unique", first, p, assetName))
+			if first, dup := seen[entry.Name]; dup {
+				errs = append(errs, fmt.Errorf("platforms %q and %q resolve to the same asset name %q: asset names must be unique", first, p, entry.Name))
 			} else {
-				seen[assetName] = p
+				seen[entry.Name] = p
 			}
 		}
 	}
@@ -191,13 +196,13 @@ func Validate(cfg *Config, mode ValidationMode) []error {
 
 	// In normal mode, verify binary files exist on disk
 	if mode == ModeNormal {
-		for platform, path := range cfg.Platforms {
-			if path == "" {
+		for platform, entry := range cfg.Platforms {
+			if entry.Path == "" {
 				errs = append(errs, fmt.Errorf("platform %q has empty binary path", platform))
 				continue
 			}
-			if _, err := os.Stat(path); err != nil {
-				errs = append(errs, fmt.Errorf("binary file for platform %q not found at %q", platform, path))
+			if _, err := os.Stat(entry.Path); err != nil {
+				errs = append(errs, fmt.Errorf("binary file for platform %q not found at %q", platform, entry.Path))
 			}
 		}
 	}

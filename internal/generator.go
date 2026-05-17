@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"text/template"
 )
@@ -83,13 +82,13 @@ func Generate(cfg *Config, tplFS fs.FS, mode ValidationMode) (*Output, error) {
 
 	var platforms []platformEntry
 	for _, p := range ValidPlatforms {
-		path, ok := cfg.Platforms[p]
+		entry, ok := cfg.Platforms[p]
 		if !ok {
 			continue
 		}
 		platforms = append(platforms, platformEntry{
 			ID:        p,
-			AssetName: filepath.Base(path),
+			AssetName: entry.Name,
 		})
 	}
 
@@ -141,17 +140,17 @@ func render(tpl string, data *templateData) (string, error) {
 func buildChecksums(cfg *Config, mode ValidationMode) (string, error) {
 	var sb strings.Builder
 	for _, platform := range ValidPlatforms {
-		path, ok := cfg.Platforms[platform]
+		entry, ok := cfg.Platforms[platform]
 		if !ok {
 			continue
 		}
-		f, err := os.Open(path)
+		f, err := os.Open(entry.Path)
 		if err != nil {
 			if mode == ModeDryRun {
-				fmt.Fprintf(os.Stderr, "warning: skipping checksum for %s: file not found at %s\n", platform, path)
+				fmt.Fprintf(os.Stderr, "warning: skipping checksum for %s: file not found at %s\n", platform, entry.Path)
 				continue
 			}
-			return "", fmt.Errorf("opening binary for platform %s at %s: %w", platform, path, err)
+			return "", fmt.Errorf("opening binary for platform %s at %s: %w", platform, entry.Path, err)
 		}
 		h := sha256.New()
 		if _, err := io.Copy(h, f); err != nil {
@@ -159,8 +158,7 @@ func buildChecksums(cfg *Config, mode ValidationMode) (string, error) {
 			return "", fmt.Errorf("hashing binary for platform %s: %w", platform, err)
 		}
 		f.Close()
-		assetName := filepath.Base(path)
-		fmt.Fprintf(&sb, "%x  %s\n", h.Sum(nil), assetName)
+		fmt.Fprintf(&sb, "%x  %s\n", h.Sum(nil), entry.Name)
 	}
 	return sb.String(), nil
 }

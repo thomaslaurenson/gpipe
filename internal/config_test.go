@@ -30,7 +30,9 @@ repo: owner/mycli
 version: v1.2.3
 sign: true
 platforms:
-  linux_amd64: ./dist/mycli-linux-x86_64
+  linux_amd64:
+    path: ./dist/mycli-linux-x86_64
+    name: mycli-linux-x86_64
 completions:
   bash: true
 `
@@ -57,8 +59,11 @@ completions:
 	if !cfg.Sign {
 		t.Error("expected sign=true")
 	}
-	if cfg.Platforms["linux_amd64"] != "./dist/mycli-linux-x86_64" {
-		t.Errorf("unexpected platform path: %q", cfg.Platforms["linux_amd64"])
+	if cfg.Platforms["linux_amd64"].Path != "./dist/mycli-linux-x86_64" {
+		t.Errorf("unexpected platform path: %q", cfg.Platforms["linux_amd64"].Path)
+	}
+	if cfg.Platforms["linux_amd64"].Name != "mycli-linux-x86_64" {
+		t.Errorf("unexpected platform name: %q", cfg.Platforms["linux_amd64"].Name)
 	}
 	if !cfg.Completions.Bash {
 		t.Error("expected completions.bash=true")
@@ -142,7 +147,9 @@ func minimalValidConfig() *gpipe.Config {
 		Version:     "v1.2.3",
 		Binary:      "mycli",
 		InstallName: "mycli",
-		Platforms:   map[string]string{"linux_amd64": "/nonexistent/path"},
+		Platforms: map[string]gpipe.PlatformEntry{
+			"linux_amd64": {Path: "/nonexistent/path", Name: "mycli-linux-x86_64"},
+		},
 	}
 }
 
@@ -236,7 +243,7 @@ func TestValidate_DryRunAllowsPlaceholderVersion(t *testing.T) {
 func TestValidate_UnknownPlatform(t *testing.T) {
 	t.Parallel()
 	cfg := minimalValidConfig()
-	cfg.Platforms = map[string]string{"solaris_amd64": "./bin"}
+	cfg.Platforms = map[string]gpipe.PlatformEntry{"solaris_amd64": {Path: "./bin", Name: "mycli-solaris-x86_64"}}
 	errs := gpipe.Validate(cfg, gpipe.ModeValidate)
 	assertContainsError(t, errs, "unknown platform identifier")
 }
@@ -272,7 +279,7 @@ func TestValidate_HookFileMissing(t *testing.T) {
 func TestValidate_NormalModeBinaryFileMissing(t *testing.T) {
 	t.Parallel()
 	cfg := minimalValidConfig()
-	cfg.Platforms = map[string]string{"linux_amd64": "/nonexistent/binary"}
+	cfg.Platforms = map[string]gpipe.PlatformEntry{"linux_amd64": {Path: "/nonexistent/binary", Name: "mycli-linux-x86_64"}}
 	errs := gpipe.Validate(cfg, gpipe.ModeNormal)
 	assertContainsError(t, errs, "not found")
 }
@@ -280,7 +287,7 @@ func TestValidate_NormalModeBinaryFileMissing(t *testing.T) {
 func TestValidate_ValidateModeIgnoresMissingBinaryFiles(t *testing.T) {
 	t.Parallel()
 	cfg := minimalValidConfig()
-	cfg.Platforms = map[string]string{"linux_amd64": "/nonexistent/binary"}
+	cfg.Platforms = map[string]gpipe.PlatformEntry{"linux_amd64": {Path: "/nonexistent/binary", Name: "mycli-linux-x86_64"}}
 	errs := gpipe.Validate(cfg, gpipe.ModeValidate)
 	for _, e := range errs {
 		if contains(e.Error(), "binary file for platform") {
@@ -318,7 +325,9 @@ repo: myorg/tool
 version: v2.0.0
 sign: true
 platforms:
-  linux_amd64: ./dist/tool
+  linux_amd64:
+    path: ./dist/tool
+    name: tool-linux-x86_64
 `
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
@@ -353,9 +362,9 @@ func TestMergeFlags_CLIOverridesConfigRepoAndVersion(t *testing.T) {
 func TestValidate_DuplicateAssetNames(t *testing.T) {
 	t.Parallel()
 	cfg := minimalValidConfig()
-	cfg.Platforms = map[string]string{
-		"linux_amd64": "/dist/my-tool",
-		"linux_arm64": "/dist/my-tool",
+	cfg.Platforms = map[string]gpipe.PlatformEntry{
+		"linux_amd64": {Path: "/dist/my-tool-x86_64", Name: "my-tool"},
+		"linux_arm64": {Path: "/dist/my-tool-aarch64", Name: "my-tool"},
 	}
 	errs := gpipe.Validate(cfg, gpipe.ModeValidate)
 	assertContainsError(t, errs, "resolve to the same asset name")
@@ -364,9 +373,9 @@ func TestValidate_DuplicateAssetNames(t *testing.T) {
 func TestValidate_UniqueAssetNamesNoError(t *testing.T) {
 	t.Parallel()
 	cfg := minimalValidConfig()
-	cfg.Platforms = map[string]string{
-		"linux_amd64": "/dist/my-tool-x86_64",
-		"linux_arm64": "/dist/my-tool-aarch64",
+	cfg.Platforms = map[string]gpipe.PlatformEntry{
+		"linux_amd64": {Path: "/dist/my-tool-x86_64", Name: "my-tool-x86_64"},
+		"linux_arm64": {Path: "/dist/my-tool-aarch64", Name: "my-tool-aarch64"},
 	}
 	errs := gpipe.Validate(cfg, gpipe.ModeValidate)
 	for _, e := range errs {

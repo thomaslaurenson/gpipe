@@ -29,7 +29,9 @@ func minimalCfg(t *testing.T) (*gpipe.Config, string) {
 		Version:     "v1.2.3",
 		Binary:      "mycli",
 		InstallName: "mycli",
-		Platforms:   map[string]string{"linux_amd64": binPath},
+		Platforms: map[string]gpipe.PlatformEntry{
+			"linux_amd64": {Path: binPath, Name: "mycli-linux-x86_64"},
+		},
 	}
 	return cfg, dir
 }
@@ -165,8 +167,8 @@ func TestGenerate_DryRunSkipsMissingBinary(t *testing.T) {
 		Version:     "v1.2.3",
 		Binary:      "mycli",
 		InstallName: "mycli",
-		Platforms: map[string]string{
-			"linux_amd64": "/nonexistent/mycli-linux-x86_64",
+		Platforms: map[string]gpipe.PlatformEntry{
+			"linux_amd64": {Path: "/nonexistent/mycli-linux-x86_64", Name: "mycli-linux-x86_64"},
 		},
 	}
 
