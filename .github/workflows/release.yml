@@ -22,6 +22,9 @@ jobs:
 
       - uses: sigstore/cosign-installer@v4.1.2
 
+      - name: Extract release notes from CHANGELOG.md
+        run: make get_changelog TAG=${GITHUB_REF_NAME} > /tmp/release-notes.md
+
       - uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"

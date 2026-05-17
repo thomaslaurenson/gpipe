@@ -12,7 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ValidationMode controls how strict validation is
+// ValidationMode controls how strict validation is.
 type ValidationMode int
 
 const (
@@ -21,7 +21,7 @@ const (
 	ModeDryRun
 )
 
-// ValidPlatforms lists all supported platform identifiers in canonical order
+// ValidPlatforms lists all supported platform identifiers in canonical order.
 var ValidPlatforms = []string{
 	"linux_amd64",
 	"linux_arm64",
@@ -40,7 +40,7 @@ var semverRelaxedPattern = regexp.MustCompile(`^v?[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-
 // repoPattern matches owner/repo
 var repoPattern = regexp.MustCompile(`^[^/\s]+/[^/\s]+$`)
 
-// Hooks holds optional hook file paths
+// Hooks holds optional hook file paths.
 type Hooks struct {
 	PreSh   string `yaml:"pre-sh"`
 	PostSh  string `yaml:"post-sh"`
@@ -48,7 +48,7 @@ type Hooks struct {
 	PostPs1 string `yaml:"post-ps1"`
 }
 
-// Completions holds per-shell completion flags
+// Completions holds per-shell completion flags.
 type Completions struct {
 	Bash       bool `yaml:"bash"`
 	Zsh        bool `yaml:"zsh"`
@@ -56,7 +56,7 @@ type Completions struct {
 	PowerShell bool `yaml:"powershell"`
 }
 
-// Config holds the merged configuration from .gpipe.yml and CLI flags
+// Config holds the merged configuration from .gpipe.yml and CLI flags.
 type Config struct {
 	Binary      string            `yaml:"binary"`
 	InstallName string            `yaml:"install-name"`
@@ -68,7 +68,7 @@ type Config struct {
 	Sign        bool              `yaml:"sign"`
 }
 
-// FlagValues holds CLI flag overrides
+// FlagValues holds CLI flag overrides.
 type FlagValues struct {
 	GithubRepo  string
 	Version     string
@@ -77,8 +77,9 @@ type FlagValues struct {
 	Sign        *bool
 }
 
-// LoadConfig reads and parses a .gpipe.yml file
-// Returns an empty Config (not nil) if the file does not exist
+// LoadConfig reads and parses a .gpipe.yml file.
+//
+// Returns an empty Config (not nil) if the file does not exist.
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -95,8 +96,9 @@ func LoadConfig(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// MergeFlags applies CLI flag overrides on top of a loaded config
-// install-name defaults to binary if neither is set via flag or config
+// MergeFlags applies CLI flag overrides on top of a loaded config.
+//
+// install-name defaults to binary if neither is set via flag or config.
 func MergeFlags(cfg *Config, flags FlagValues) {
 	if flags.GithubRepo != "" {
 		cfg.GithubRepo = flags.GithubRepo
@@ -118,8 +120,9 @@ func MergeFlags(cfg *Config, flags FlagValues) {
 	}
 }
 
-// Validate checks the config for correctness and returns a slice of errors
-// Returns nil if all checks pass
+// Validate checks the config for correctness and returns a slice of errors.
+//
+// Returns nil if all checks pass.
 func Validate(cfg *Config, mode ValidationMode) []error {
 	var errs []error
 

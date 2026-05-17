@@ -13,7 +13,7 @@ import (
 	"text/template"
 )
 
-// Output holds the three generated file contents
+// Output holds the three generated file contents.
 type Output struct {
 	InstallSh  string
 	InstallPs1 string
@@ -45,9 +45,10 @@ type hookContent struct {
 	PostPs1 string
 }
 
-// Generate produces install.sh, install.ps1, and checksums.txt from cfg
-// tplFS must be an fs.FS with install.sh and install.ps1 at its root
-// In dry-run mode, missing platform binary files produce warnings instead of errors
+// Generate produces install.sh, install.ps1, and checksums.txt from cfg.
+//
+// tplFS must be an fs.FS with install.sh and install.ps1 at its root.
+// In dry-run mode, missing platform binary files produce warnings instead of errors.
 func Generate(cfg *Config, tplFS fs.FS, mode ValidationMode) (*Output, error) {
 	shTpl, err := fs.ReadFile(tplFS, "install.sh")
 	if err != nil {
@@ -199,6 +200,7 @@ func validateBashSyntax(path string) error {
 }
 
 // SignChecksums runs `cosign sign-blob --yes` on the given file.
+//
 // Returns a clear error if cosign is not installed.
 func SignChecksums(path string) error {
 	cosign, err := exec.LookPath("cosign")

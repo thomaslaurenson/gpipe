@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Version is set at build time via ldflags
+// Version is set at build time via ldflags.
 var Version = "dev"
 
 // templateFS holds the embedded templates, provided via Execute
@@ -19,7 +19,7 @@ var rootCmd = &cobra.Command{
 injecting project-specific configuration and SHA256 checksums at generation time.`,
 }
 
-// Execute runs the root command
+// Execute runs the root command.
 func Execute(tplFS fs.FS) error {
 	templateFS = tplFS
 	return rootCmd.Execute()

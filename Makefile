@@ -64,7 +64,7 @@ release_check: ## Validate goreleaser config
 	goreleaser check
 
 get_changelog: ## Extract release notes for TAG from CHANGELOG.md (usage: make get_changelog TAG=v1.0.0)
-	@awk '/^## \[$(TAG)\]/{found=1; next} found && /^## \[/{exit} found{print}' CHANGELOG.md
+	@awk '/^## $(TAG) /{found=1; next} found && /^## v[0-9]/{exit} found{print}' CHANGELOG.md
 
 # TASKS
 clean: ## Remove build artifacts
