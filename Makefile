@@ -9,6 +9,7 @@ LDFLAGS := -s -w -X github.com/thomaslaurenson/gpipe/cmd.Version=$(VERSION)
 	build install \
 	fmt fmt_check mod_check vet \
 	test test_verbose test_coverage \
+	snapshot release_check get_changelog \
 	ci \
 	clean
 
@@ -54,6 +55,16 @@ test_coverage: ## Run tests and print coverage
 	rm coverage.out
 
 ci: fmt_check mod_check vet test ## Run all CI checks locally
+
+# RELEASE
+snapshot: ## Build a local snapshot release with goreleaser
+	goreleaser release --snapshot --clean
+
+release_check: ## Validate goreleaser config
+	goreleaser check
+
+get_changelog: ## Extract release notes for TAG from CHANGELOG.md (usage: make get_changelog TAG=v1.0.0)
+	@awk '/^## \[$(TAG)\]/{found=1; next} found && /^## \[/{exit} found{print}' CHANGELOG.md
 
 # TASKS
 clean: ## Remove build artifacts
