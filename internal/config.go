@@ -1,3 +1,4 @@
+// Package gpipe provides configuration loading, validation, and install script generation for gpipe.
 package gpipe
 
 import (
@@ -16,8 +17,8 @@ type ValidationMode int
 
 const (
 	ModeNormal   ValidationMode = iota
-	ModeValidate ValidationMode = iota
-	ModeDryRun   ValidationMode = iota
+	ModeValidate
+	ModeDryRun
 )
 
 // ValidPlatforms lists all supported platform identifiers in canonical order
