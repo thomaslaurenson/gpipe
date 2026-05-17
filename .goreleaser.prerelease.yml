@@ -39,8 +39,13 @@ signs:
       - "--yes"
 
 release:
-  prerelease: auto
+  prerelease: true
   draft: false
+  name_template: "Dev (Pre-release)"
 
 changelog:
   disable: true
+
+git:
+  ignore_tags:
+    - "*-dev"

@@ -9,6 +9,7 @@ import (
 )
 
 func TestLoadConfig_FileNotExist(t *testing.T) {
+	t.Parallel()
 	cfg, err := gpipe.LoadConfig("/nonexistent/.gpipe.yml")
 	if err != nil {
 		t.Fatalf("expected nil error for missing file, got: %v", err)
@@ -19,6 +20,7 @@ func TestLoadConfig_FileNotExist(t *testing.T) {
 }
 
 func TestLoadConfig_ValidFile(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".gpipe.yml")
 	content := `
@@ -64,6 +66,7 @@ completions:
 }
 
 func TestLoadConfig_MalformedYAML(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".gpipe.yml")
 	if err := os.WriteFile(path, []byte("binary: [\ninvalid"), 0o644); err != nil {
@@ -76,6 +79,7 @@ func TestLoadConfig_MalformedYAML(t *testing.T) {
 }
 
 func TestMergeFlags_OverridesApplied(t *testing.T) {
+	t.Parallel()
 	signTrue := true
 	cfg := &gpipe.Config{Binary: "old", GithubRepo: "old/old"}
 	gpipe.MergeFlags(cfg, gpipe.FlagValues{
@@ -103,6 +107,7 @@ func TestMergeFlags_OverridesApplied(t *testing.T) {
 }
 
 func TestMergeFlags_EmptyFlagsDoNotOverride(t *testing.T) {
+	t.Parallel()
 	cfg := &gpipe.Config{Binary: "mycli", GithubRepo: "owner/repo"}
 	gpipe.MergeFlags(cfg, gpipe.FlagValues{})
 	if cfg.Binary != "mycli" {
@@ -114,6 +119,7 @@ func TestMergeFlags_EmptyFlagsDoNotOverride(t *testing.T) {
 }
 
 func TestMergeFlags_InstallNameDefaultsToBinary(t *testing.T) {
+	t.Parallel()
 	cfg := &gpipe.Config{Binary: "mycli"}
 	gpipe.MergeFlags(cfg, gpipe.FlagValues{})
 	if cfg.InstallName != "mycli" {
@@ -122,6 +128,7 @@ func TestMergeFlags_InstallNameDefaultsToBinary(t *testing.T) {
 }
 
 func TestMergeFlags_InstallNameNotOverriddenWhenSet(t *testing.T) {
+	t.Parallel()
 	cfg := &gpipe.Config{Binary: "mycli", InstallName: "cli"}
 	gpipe.MergeFlags(cfg, gpipe.FlagValues{})
 	if cfg.InstallName != "cli" {
@@ -140,6 +147,7 @@ func minimalValidConfig() *gpipe.Config {
 }
 
 func TestValidate_MissingRepo(t *testing.T) {
+	t.Parallel()
 	cfg := minimalValidConfig()
 	cfg.GithubRepo = ""
 	errs := gpipe.Validate(cfg, gpipe.ModeValidate)
@@ -147,6 +155,7 @@ func TestValidate_MissingRepo(t *testing.T) {
 }
 
 func TestValidate_BadRepoFormat(t *testing.T) {
+	t.Parallel()
 	cfg := minimalValidConfig()
 	cfg.GithubRepo = "notarepo"
 	errs := gpipe.Validate(cfg, gpipe.ModeValidate)
@@ -154,6 +163,7 @@ func TestValidate_BadRepoFormat(t *testing.T) {
 }
 
 func TestValidate_MissingVersion(t *testing.T) {
+	t.Parallel()
 	cfg := minimalValidConfig()
 	cfg.Version = ""
 	errs := gpipe.Validate(cfg, gpipe.ModeValidate)
@@ -161,29 +171,58 @@ func TestValidate_MissingVersion(t *testing.T) {
 }
 
 func TestValidate_InvalidVersionNormal(t *testing.T) {
-	for _, bad := range []string{"main", "fix/my-bug", "latest"} {
-		cfg := minimalValidConfig()
-		cfg.Version = bad
-		errs := gpipe.Validate(cfg, gpipe.ModeNormal)
-		assertContainsError(t, errs, "invalid version")
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		version string
+	}{
+		{name: "branch name", version: "main"},
+		{name: "branch with slash", version: "fix/my-bug"},
+		{name: "non-semver string", version: "latest"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := minimalValidConfig()
+			cfg.Version = tc.version
+			errs := gpipe.Validate(cfg, gpipe.ModeNormal)
+			assertContainsError(t, errs, "invalid version")
+		})
 	}
 }
 
 func TestValidate_ValidVersionFormats(t *testing.T) {
-	for _, good := range []string{"v1.2.3", "1.2.3", "v1.2", "1.2"} {
-		cfg := minimalValidConfig()
-		cfg.Version = good
-		// Use ModeValidate so binary file existence is not checked.
-		errs := gpipe.Validate(cfg, gpipe.ModeValidate)
-		for _, e := range errs {
-			if e.Error() == "invalid version" {
-				t.Errorf("version %q should be valid but got error: %v", good, e)
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		version string
+	}{
+		{name: "v-prefixed three-part", version: "v1.2.3"},
+		{name: "three-part no prefix", version: "1.2.3"},
+		{name: "v-prefixed two-part", version: "v1.2"},
+		{name: "two-part no prefix", version: "1.2"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := minimalValidConfig()
+			cfg.Version = tc.version
+			errs := gpipe.Validate(cfg, gpipe.ModeValidate)
+			for _, e := range errs {
+				if e.Error() == "invalid version" {
+					t.Errorf("version %q should be valid but got error: %v", tc.version, e)
+				}
 			}
-		}
+		})
 	}
 }
 
 func TestValidate_DryRunAllowsPlaceholderVersion(t *testing.T) {
+	t.Parallel()
 	cfg := minimalValidConfig()
 	cfg.Version = "v0.0.0-dry-run"
 	errs := gpipe.Validate(cfg, gpipe.ModeDryRun)
@@ -195,6 +234,7 @@ func TestValidate_DryRunAllowsPlaceholderVersion(t *testing.T) {
 }
 
 func TestValidate_UnknownPlatform(t *testing.T) {
+	t.Parallel()
 	cfg := minimalValidConfig()
 	cfg.Platforms = map[string]string{"solaris_amd64": "./bin"}
 	errs := gpipe.Validate(cfg, gpipe.ModeValidate)
@@ -202,6 +242,7 @@ func TestValidate_UnknownPlatform(t *testing.T) {
 }
 
 func TestValidate_MissingBinary(t *testing.T) {
+	t.Parallel()
 	cfg := minimalValidConfig()
 	cfg.Binary = ""
 	errs := gpipe.Validate(cfg, gpipe.ModeValidate)
@@ -209,6 +250,7 @@ func TestValidate_MissingBinary(t *testing.T) {
 }
 
 func TestValidate_HookWrongExtension(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	hookPath := filepath.Join(dir, "hook.ps1")
 	os.WriteFile(hookPath, []byte("echo hello"), 0o644)
@@ -220,6 +262,7 @@ func TestValidate_HookWrongExtension(t *testing.T) {
 }
 
 func TestValidate_HookFileMissing(t *testing.T) {
+	t.Parallel()
 	cfg := minimalValidConfig()
 	cfg.Hooks.PostSh = "/nonexistent/hook.sh"
 	errs := gpipe.Validate(cfg, gpipe.ModeValidate)
@@ -227,6 +270,7 @@ func TestValidate_HookFileMissing(t *testing.T) {
 }
 
 func TestValidate_NormalModeBinaryFileMissing(t *testing.T) {
+	t.Parallel()
 	cfg := minimalValidConfig()
 	cfg.Platforms = map[string]string{"linux_amd64": "/nonexistent/binary"}
 	errs := gpipe.Validate(cfg, gpipe.ModeNormal)
@@ -234,6 +278,7 @@ func TestValidate_NormalModeBinaryFileMissing(t *testing.T) {
 }
 
 func TestValidate_ValidateModeIgnoresMissingBinaryFiles(t *testing.T) {
+	t.Parallel()
 	cfg := minimalValidConfig()
 	cfg.Platforms = map[string]string{"linux_amd64": "/nonexistent/binary"}
 	errs := gpipe.Validate(cfg, gpipe.ModeValidate)
@@ -245,6 +290,7 @@ func TestValidate_ValidateModeIgnoresMissingBinaryFiles(t *testing.T) {
 }
 
 func TestMergeFlags_SignNilDoesNotOverride(t *testing.T) {
+	t.Parallel()
 	cfg := &gpipe.Config{Sign: true}
 	gpipe.MergeFlags(cfg, gpipe.FlagValues{})
 	if !cfg.Sign {
@@ -253,6 +299,7 @@ func TestMergeFlags_SignNilDoesNotOverride(t *testing.T) {
 }
 
 func TestMergeFlags_SignFalseOverridesTrue(t *testing.T) {
+	t.Parallel()
 	signFalse := false
 	cfg := &gpipe.Config{Sign: true}
 	gpipe.MergeFlags(cfg, gpipe.FlagValues{Sign: &signFalse})
@@ -262,6 +309,7 @@ func TestMergeFlags_SignFalseOverridesTrue(t *testing.T) {
 }
 
 func TestLoadConfig_RepoVersionSignFromYAML(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".gpipe.yml")
 	content := `
@@ -291,6 +339,7 @@ platforms:
 }
 
 func TestMergeFlags_CLIOverridesConfigRepoAndVersion(t *testing.T) {
+	t.Parallel()
 	cfg := &gpipe.Config{GithubRepo: "yaml/repo", Version: "v1.0.0"}
 	gpipe.MergeFlags(cfg, gpipe.FlagValues{GithubRepo: "cli/repo", Version: "v2.0.0"})
 	if cfg.GithubRepo != "cli/repo" {
@@ -302,6 +351,7 @@ func TestMergeFlags_CLIOverridesConfigRepoAndVersion(t *testing.T) {
 }
 
 func TestValidate_DuplicateAssetNames(t *testing.T) {
+	t.Parallel()
 	cfg := minimalValidConfig()
 	cfg.Platforms = map[string]string{
 		"linux_amd64": "/dist/my-tool",
@@ -312,6 +362,7 @@ func TestValidate_DuplicateAssetNames(t *testing.T) {
 }
 
 func TestValidate_UniqueAssetNamesNoError(t *testing.T) {
+	t.Parallel()
 	cfg := minimalValidConfig()
 	cfg.Platforms = map[string]string{
 		"linux_amd64": "/dist/my-tool-x86_64",
