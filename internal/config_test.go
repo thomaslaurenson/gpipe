@@ -26,8 +26,6 @@ func TestLoadConfig_ValidFile(t *testing.T) {
 	content := `
 binary: mycli
 install-name: cli
-repo: owner/mycli
-version: v1.2.3
 sign: true
 platforms:
   linux_amd64:
@@ -50,11 +48,12 @@ completions:
 	if cfg.InstallName != "cli" {
 		t.Errorf("expected install-name=cli, got %q", cfg.InstallName)
 	}
-	if cfg.GithubRepo != "owner/mycli" {
-		t.Errorf("expected repo=owner/mycli, got %q", cfg.GithubRepo)
+	// repo and version must not be read from config file
+	if cfg.GithubRepo != "" {
+		t.Errorf("repo should not be read from config file, got %q", cfg.GithubRepo)
 	}
-	if cfg.Version != "v1.2.3" {
-		t.Errorf("expected version=v1.2.3, got %q", cfg.Version)
+	if cfg.Version != "" {
+		t.Errorf("version should not be read from config file, got %q", cfg.Version)
 	}
 	if !cfg.Sign {
 		t.Error("expected sign=true")
@@ -67,6 +66,33 @@ completions:
 	}
 	if !cfg.Completions.Bash {
 		t.Error("expected completions.bash=true")
+	}
+}
+
+func TestLoadConfig_RepoVersionIgnoredFromYAML(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".gpipe.yml")
+	// Even if someone puts repo/version in the file, they must be ignored
+	content := `
+binary: tool
+platforms:
+  linux_amd64:
+    path: ./dist/tool
+    name: tool-linux-x86_64
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := gpipe.LoadConfig(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.GithubRepo != "" {
+		t.Errorf("repo should not be populated from config file, got %q", cfg.GithubRepo)
+	}
+	if cfg.Version != "" {
+		t.Errorf("version should not be populated from config file, got %q", cfg.Version)
 	}
 }
 
@@ -263,7 +289,7 @@ func TestValidate_HookWrongExtension(t *testing.T) {
 	os.WriteFile(hookPath, []byte("echo hello"), 0o644)
 
 	cfg := minimalValidConfig()
-	cfg.Hooks.PreSh = hookPath // .ps1 file under a .sh key
+	cfg.Hooks.PreSh = hookPath
 	errs := gpipe.Validate(cfg, gpipe.ModeValidate)
 	assertContainsError(t, errs, "expected \".sh\"")
 }
@@ -315,47 +341,15 @@ func TestMergeFlags_SignFalseOverridesTrue(t *testing.T) {
 	}
 }
 
-func TestLoadConfig_RepoVersionSignFromYAML(t *testing.T) {
+func TestMergeFlags_CLIOverridesRepoAndVersion(t *testing.T) {
 	t.Parallel()
-	dir := t.TempDir()
-	path := filepath.Join(dir, ".gpipe.yml")
-	content := `
-binary: tool
-repo: myorg/tool
-version: v2.0.0
-sign: true
-platforms:
-  linux_amd64:
-    path: ./dist/tool
-    name: tool-linux-x86_64
-`
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cfg, err := gpipe.LoadConfig(path)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.GithubRepo != "myorg/tool" {
-		t.Errorf("expected repo=myorg/tool, got %q", cfg.GithubRepo)
-	}
-	if cfg.Version != "v2.0.0" {
-		t.Errorf("expected version=v2.0.0, got %q", cfg.Version)
-	}
-	if !cfg.Sign {
-		t.Error("expected sign=true from YAML")
-	}
-}
-
-func TestMergeFlags_CLIOverridesConfigRepoAndVersion(t *testing.T) {
-	t.Parallel()
-	cfg := &gpipe.Config{GithubRepo: "yaml/repo", Version: "v1.0.0"}
+	cfg := &gpipe.Config{GithubRepo: "old/repo", Version: "v1.0.0"}
 	gpipe.MergeFlags(cfg, gpipe.FlagValues{GithubRepo: "cli/repo", Version: "v2.0.0"})
 	if cfg.GithubRepo != "cli/repo" {
-		t.Errorf("CLI --repo should override config repo, got %q", cfg.GithubRepo)
+		t.Errorf("CLI --repo should override, got %q", cfg.GithubRepo)
 	}
 	if cfg.Version != "v2.0.0" {
-		t.Errorf("CLI --version should override config version, got %q", cfg.Version)
+		t.Errorf("CLI --version should override, got %q", cfg.Version)
 	}
 }
 
@@ -382,6 +376,50 @@ func TestValidate_UniqueAssetNamesNoError(t *testing.T) {
 		if contains(e.Error(), "resolve to the same asset name") {
 			t.Errorf("unique asset names should not trigger uniqueness error, got: %v", e)
 		}
+	}
+}
+
+func TestParseGitRemote_HTTPS(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		remote   string
+		expected string
+	}{
+		{"https://github.com/owner/repo.git", "owner/repo"},
+		{"https://github.com/owner/repo", "owner/repo"},
+		{"https://github.com/org/my-tool.git", "org/my-tool"},
+	}
+	for _, tc := range tests {
+		got := gpipe.ParseGitRemote(tc.remote)
+		if got != tc.expected {
+			t.Errorf("ParseGitRemote(%q) = %q, want %q", tc.remote, got, tc.expected)
+		}
+	}
+}
+
+func TestParseGitRemote_SSH(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		remote   string
+		expected string
+	}{
+		{"git@github.com:owner/repo.git", "owner/repo"},
+		{"git@github.com:owner/repo", "owner/repo"},
+		{"git@github.com:org/my-tool.git", "org/my-tool"},
+	}
+	for _, tc := range tests {
+		got := gpipe.ParseGitRemote(tc.remote)
+		if got != tc.expected {
+			t.Errorf("ParseGitRemote(%q) = %q, want %q", tc.remote, got, tc.expected)
+		}
+	}
+}
+
+func TestParseGitRemote_Invalid(t *testing.T) {
+	t.Parallel()
+	got := gpipe.ParseGitRemote("not-a-remote")
+	if got != "" {
+		t.Errorf("expected empty string for invalid remote, got %q", got)
 	}
 }
 

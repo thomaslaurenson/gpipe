@@ -13,7 +13,10 @@ var generateCmd = &cobra.Command{
 	Use:   "generate",
 	Short: "Generate install scripts and checksums",
 	Long: `Generate install.sh, install.ps1, and checksums.txt in the current directory.
-Reads configuration from .gpipe.yml and computes SHA256 checksums for each platform binary.`,
+Reads configuration from .gpipe.yml and computes SHA256 checksums for each platform binary.
+
+--repo and --version are required. If not provided via flags, they are auto-detected
+from the git remote origin URL and the nearest git tag respectively.`,
 	RunE: runGenerate,
 }
 
@@ -28,8 +31,8 @@ var generateFlags struct {
 }
 
 func init() {
-	generateCmd.Flags().StringVar(&generateFlags.repo, "repo", "", "GitHub repo in owner/repo format")
-	generateCmd.Flags().StringVar(&generateFlags.version, "version", "", "Release version tag, e.g. v1.2.3")
+	generateCmd.Flags().StringVar(&generateFlags.repo, "repo", "", "GitHub repo in owner/repo format (auto-detected from git remote if not set)")
+	generateCmd.Flags().StringVar(&generateFlags.version, "version", "", "Release version tag, e.g. v1.2.3 (auto-detected from git tags if not set)")
 	generateCmd.Flags().StringVar(&generateFlags.configPath, "config", ".gpipe.yml", "Path to config file")
 	generateCmd.Flags().StringVar(&generateFlags.binary, "binary", "", "Binary name (overrides config)")
 	generateCmd.Flags().StringVar(&generateFlags.installName, "install-name", "", "Installed binary name on disk (overrides config)")
@@ -55,6 +58,26 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		InstallName: generateFlags.installName,
 		Sign:        signFlag,
 	})
+
+	// Auto-detect repo if not supplied
+	if cfg.GithubRepo == "" {
+		detected, err := gpipe.DetectRepo()
+		if err != nil {
+			return fmt.Errorf("--repo not provided and auto-detection failed: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "detected repo: %s\n", detected)
+		cfg.GithubRepo = detected
+	}
+
+	// Auto-detect version if not supplied
+	if cfg.Version == "" {
+		detected, err := gpipe.DetectVersion()
+		if err != nil {
+			return fmt.Errorf("--version not provided and auto-detection failed: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "detected version: %s\n", detected)
+		cfg.Version = detected
+	}
 
 	mode := gpipe.ModeNormal
 	if generateFlags.dryRun {
