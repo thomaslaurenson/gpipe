@@ -9,12 +9,12 @@ import (
 	gpipe "github.com/thomaslaurenson/gpipe/internal"
 )
 
-// testTemplateFS points at the root templates/ directory
+// testTemplateFS points at the root templates/ directory.
 // During go test, the working directory is set to the package source directory (internal/),
-// so ../templates resolves to the repo-root templates/ folder
+// so ../templates resolves to the repo-root templates/ folder.
 var testTemplateFS = os.DirFS("../templates")
 
-// minimalCfg returns a config pointing at real temp binary files
+// minimalCfg returns a config pointing at real temp binary files.
 func minimalCfg(t *testing.T) (*gpipe.Config, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -61,7 +61,7 @@ func TestGenerate_ChecksumFormat(t *testing.T) {
 	if len(lines) != 1 {
 		t.Fatalf("expected 1 checksum line, got %d", len(lines))
 	}
-	// Format: "<64 hex chars> <filename>"
+	// Format: "<64 hex chars>  <filename>" (two-space separator is sha256sum format)
 	parts := strings.SplitN(lines[0], "  ", 2)
 	if len(parts) != 2 {
 		t.Fatalf("checksum line not in sha256sum format: %q", lines[0])
@@ -74,9 +74,58 @@ func TestGenerate_ChecksumFormat(t *testing.T) {
 	}
 }
 
+func TestGenerate_MultiplePlatformsChecksumOrder(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create fake binaries for multiple platforms
+	platforms := map[string]gpipe.PlatformEntry{}
+	for _, p := range []struct {
+		id   string
+		name string
+	}{
+		{"linux_amd64", "mycli-linux-x86_64"},
+		{"linux_arm64", "mycli-linux-aarch64"},
+		{"darwin_amd64", "mycli-darwin-x86_64"},
+	} {
+		binPath := filepath.Join(dir, p.name)
+		if err := os.WriteFile(binPath, []byte("fake binary "+p.id), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		platforms[p.id] = gpipe.PlatformEntry{Path: binPath, Name: p.name}
+	}
+
+	cfg := &gpipe.Config{
+		GithubRepo:  "owner/mycli",
+		Version:     "v1.2.3",
+		Binary:      "mycli",
+		InstallName: "mycli",
+		Platforms:   platforms,
+	}
+
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(out.Checksums), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 checksum lines, got %d", len(lines))
+	}
+
+	// Verify canonical order: linux_amd64, linux_arm64, darwin_amd64
+	if !strings.Contains(lines[0], "mycli-linux-x86_64") {
+		t.Errorf("expected linux_amd64 first, got: %q", lines[0])
+	}
+	if !strings.Contains(lines[1], "mycli-linux-aarch64") {
+		t.Errorf("expected linux_arm64 second, got: %q", lines[1])
+	}
+	if !strings.Contains(lines[2], "mycli-darwin-x86_64") {
+		t.Errorf("expected darwin_amd64 third, got: %q", lines[2])
+	}
+}
+
 func TestGenerate_CompletionBlockAbsentWhenDisabled(t *testing.T) {
 	cfg, _ := minimalCfg(t)
-	// All completions default false, no blocks should appear
 	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -110,7 +159,7 @@ func TestGenerate_CompletionBlockPresentWhenEnabled(t *testing.T) {
 	}
 }
 
-func TestGenerate_HookInjectedAndWrapped(t *testing.T) {
+func TestGenerate_ShHookInjectedAndWrapped(t *testing.T) {
 	cfg, dir := minimalCfg(t)
 
 	hookPath := filepath.Join(dir, "post-install.sh")
@@ -130,6 +179,29 @@ func TestGenerate_HookInjectedAndWrapped(t *testing.T) {
 	}
 	if !strings.Contains(out.InstallSh, "# --- gpipe: end post-install hook ---") {
 		t.Error("missing post-install hook footer comment")
+	}
+}
+
+func TestGenerate_Ps1HookInjectedAndWrapped(t *testing.T) {
+	cfg, dir := minimalCfg(t)
+
+	hookPath := filepath.Join(dir, "post-install.ps1")
+	os.WriteFile(hookPath, []byte("Write-Host 'post hook'\n"), 0o644)
+	cfg.Hooks.PostPs1 = hookPath
+
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(out.InstallPs1, "# --- gpipe: post-install hook ---") {
+		t.Error("ps1: missing post-install hook header comment")
+	}
+	if !strings.Contains(out.InstallPs1, "Write-Host 'post hook'") {
+		t.Error("ps1: hook content not present in output")
+	}
+	if !strings.Contains(out.InstallPs1, "# --- gpipe: end post-install hook ---") {
+		t.Error("ps1: missing post-install hook footer comment")
 	}
 }
 
@@ -176,7 +248,6 @@ func TestGenerate_DryRunSkipsMissingBinary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dry-run should not error on missing binary, got: %v", err)
 	}
-	// Checksums should be empty since no binary was found
 	if strings.TrimSpace(out.Checksums) != "" {
 		t.Errorf("expected empty checksums for missing binary in dry-run, got: %q", out.Checksums)
 	}
@@ -196,8 +267,23 @@ func TestGenerate_HeaderPresent(t *testing.T) {
 	}
 }
 
+func TestGenerate_CosignIdentityBakedIn(t *testing.T) {
+	cfg, _ := minimalCfg(t)
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expectedIdentity := "https://github.com/owner/mycli/.github/workflows/.*"
+	if !strings.Contains(out.InstallSh, expectedIdentity) {
+		t.Errorf("install.sh should contain baked-in cosign identity %q", expectedIdentity)
+	}
+	if !strings.Contains(out.InstallPs1, expectedIdentity) {
+		t.Errorf("install.ps1 should contain baked-in cosign identity %q", expectedIdentity)
+	}
+}
+
 func TestSignChecksums_SignFalseNoError(t *testing.T) {
-	// sign=false: Generate should succeed without cosign being present
 	cfg, _ := minimalCfg(t)
 	cfg.Sign = false
 	_, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
@@ -207,7 +293,6 @@ func TestSignChecksums_SignFalseNoError(t *testing.T) {
 }
 
 func TestSignChecksums_CosignMissingReturnsError(t *testing.T) {
-	// Clear PATH so cosign cannot be found
 	t.Setenv("PATH", t.TempDir())
 
 	err := gpipe.SignChecksums("/some/checksums.txt")
@@ -216,5 +301,31 @@ func TestSignChecksums_CosignMissingReturnsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "cosign not found") {
 		t.Errorf("expected 'cosign not found' in error, got: %v", err)
+	}
+}
+
+func TestSignChecksums_BashSyntaxCheckSkippedWhenBashMissing(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+
+	dir := t.TempDir()
+	hookPath := filepath.Join(dir, "hook.sh")
+	// Valid bash syntax - should not error even without bash available
+	os.WriteFile(hookPath, []byte("echo hello\n"), 0o644)
+
+	cfg := &gpipe.Config{
+		GithubRepo:  "owner/mycli",
+		Version:     "v1.2.3",
+		Binary:      "mycli",
+		InstallName: "mycli",
+		Platforms: map[string]gpipe.PlatformEntry{
+			"linux_amd64": {Path: "/nonexistent", Name: "mycli-linux-x86_64"},
+		},
+		Hooks: gpipe.Hooks{PreSh: hookPath},
+	}
+
+	// Should not error on missing bash - syntax check is skipped with a warning
+	_, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeDryRun)
+	if err != nil {
+		t.Fatalf("missing bash should skip syntax check, not error: %v", err)
 	}
 }
