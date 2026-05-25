@@ -2,9 +2,11 @@
 package gpipe
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -22,6 +24,7 @@ const (
 )
 
 // ValidPlatforms lists all supported platform identifiers in canonical order.
+// The order here controls the order platforms appear in generated scripts.
 var ValidPlatforms = []string{
 	"linux_amd64",
 	"linux_arm64",
@@ -63,15 +66,18 @@ type PlatformEntry struct {
 }
 
 // Config holds the merged configuration from .gpipe.yml and CLI flags.
+// Note: GithubRepo and Version are runtime-only inputs supplied via CLI flags,
+// never read from the config file.
 type Config struct {
 	Binary      string                   `yaml:"binary"`
 	InstallName string                   `yaml:"install-name"`
 	Platforms   map[string]PlatformEntry `yaml:"platforms"`
 	Hooks       Hooks                    `yaml:"hooks"`
 	Completions Completions              `yaml:"completions"`
-	GithubRepo  string                   `yaml:"repo"`
-	Version     string                   `yaml:"version"`
 	Sign        bool                     `yaml:"sign"`
+	// Runtime-only: not read from config file, always supplied via flags or auto-detected.
+	GithubRepo string
+	Version    string
 }
 
 // FlagValues holds CLI flag overrides.
@@ -126,6 +132,102 @@ func MergeFlags(cfg *Config, flags FlagValues) {
 	}
 }
 
+// DetectRepo attempts to determine the GitHub repo from the git remote URL.
+//
+// Parses the origin remote URL and extracts the owner/repo portion from
+// both HTTPS and SSH remote formats. Requires git to be available in PATH.
+func DetectRepo() (string, error) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		return "", fmt.Errorf("git not found in PATH: cannot auto-detect repo")
+	}
+
+	out, err := exec.Command(git, "remote", "get-url", "origin").CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git remote get-url origin failed: %w\n%s", err, bytes.TrimSpace(out))
+	}
+
+	remote := strings.TrimSpace(string(out))
+	repo := parseGitRemote(remote)
+	if repo == "" {
+		return "", fmt.Errorf("could not parse owner/repo from git remote URL: %q", remote)
+	}
+
+	if !repoPattern.MatchString(repo) {
+		return "", fmt.Errorf("detected repo %q does not match expected owner/repo format", repo)
+	}
+
+	return repo, nil
+}
+
+// parseGitRemote extracts owner/repo from HTTPS or SSH remote URLs.
+//
+// Handles:
+//   - https://github.com/owner/repo.git
+//   - https://github.com/owner/repo
+//   - git@github.com:owner/repo.git
+//   - git@github.com:owner/repo
+func parseGitRemote(remote string) string {
+	// Strip trailing .git
+	remote = strings.TrimSuffix(remote, ".git")
+
+	// SSH format: git@github.com:owner/repo
+	if strings.Contains(remote, "@") && strings.Contains(remote, ":") {
+		parts := strings.SplitN(remote, ":", 2)
+		if len(parts) == 2 {
+			return parts[1]
+		}
+	}
+
+	// HTTPS format: https://github.com/owner/repo
+	if strings.Contains(remote, "://") {
+		parts := strings.SplitN(remote, "://", 2)
+		if len(parts) == 2 {
+			// Strip host, keep path
+			path := strings.SplitN(parts[1], "/", 2)
+			if len(path) == 2 {
+				return path[1]
+			}
+		}
+	}
+
+	return ""
+}
+
+// DetectVersion attempts to determine the current version from git tags.
+//
+// Uses git describe to find the nearest tag. Appends -dev if the working
+// tree is dirty or the commit is not exactly on a tag. Requires git in PATH.
+func DetectVersion() (string, error) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		return "", fmt.Errorf("git not found in PATH: cannot auto-detect version")
+	}
+
+	// Try exact tag match first
+	out, err := exec.Command(git, "describe", "--tags", "--exact-match", "HEAD").CombinedOutput()
+	if err == nil {
+		version := strings.TrimSpace(string(out))
+		if semverPattern.MatchString(version) {
+			return version, nil
+		}
+	}
+
+	// Not on an exact tag: find nearest tag and append -dev
+	out, err = exec.Command(git, "describe", "--tags", "--abbrev=0").CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("git describe failed: no tags found. Create a tag or pass --version explicitly")
+	}
+
+	base := strings.TrimSpace(string(out))
+	if !semverRelaxedPattern.MatchString(base) {
+		return "", fmt.Errorf("detected tag %q is not a semantic version: pass --version explicitly", base)
+	}
+
+	version := base + "-dev"
+	return version, nil
+}
+
 // Validate checks the config for correctness and returns a slice of errors.
 //
 // Returns nil if all checks pass.
@@ -133,13 +235,13 @@ func Validate(cfg *Config, mode ValidationMode) []error {
 	var errs []error
 
 	if cfg.GithubRepo == "" {
-		errs = append(errs, errors.New("missing required field: repo"))
+		errs = append(errs, errors.New("missing required field: repo (pass --repo or ensure git remote origin is set)"))
 	} else if !repoPattern.MatchString(cfg.GithubRepo) {
 		errs = append(errs, fmt.Errorf("invalid repo %q: expected owner/repo format", cfg.GithubRepo))
 	}
 
 	if cfg.Version == "" {
-		errs = append(errs, errors.New("missing required field: version"))
+		errs = append(errs, errors.New("missing required field: version (pass --version or ensure git tags are set)"))
 	} else {
 		switch mode {
 		case ModeDryRun:
@@ -231,4 +333,9 @@ func isValidPlatform(platform string) bool {
 		}
 	}
 	return false
+}
+
+// ParseGitRemote is an exported wrapper around parseGitRemote for testing.
+func ParseGitRemote(remote string) string {
+	return parseGitRemote(remote)
 }

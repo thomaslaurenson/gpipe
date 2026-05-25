@@ -31,7 +31,7 @@ checksum:
 signs:
   - artifacts: checksum
     cmd: cosign
-    signature: ${artifact}.sig
+    signature: ${artifact}.sigstore.json
     args:
       - sign-blob
       - "--bundle=${signature}"
