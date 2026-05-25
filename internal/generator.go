@@ -205,7 +205,8 @@ func SignChecksums(path string) error {
 	if err != nil {
 		return fmt.Errorf("cosign not found in PATH: install it from https://docs.sigstore.dev/cosign/system_config/installation/")
 	}
-	out, err := exec.Command(cosign, "sign-blob", "--yes", path).CombinedOutput()
+	bundle := path + ".sigstore.json"
+	out, err := exec.Command(cosign, "sign-blob", "--yes", "--bundle="+bundle, path).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("cosign sign-blob failed: %w\n%s", err, bytes.TrimSpace(out))
 	}
