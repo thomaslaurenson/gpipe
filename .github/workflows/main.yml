@@ -11,9 +11,8 @@ on:
       - .goreleaser*.yml
       - Makefile
 
-# Permissions are declared at the called workflow level.
-# Inherited here via secrets: inherit.
-permissions: {}
+permissions:
+  contents: write
 
 concurrency:
   group: main-${{ github.ref }}
