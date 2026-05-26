@@ -2,17 +2,17 @@ binary: gpipe
 
 platforms:
   linux_amd64:
-    path: ./dist/gpipe_linux_amd64_v1/gpipe
+    path: ./dist/gpipe-linux-x86_64
     name: gpipe-linux-x86_64
   linux_arm64:
-    path: ./dist/gpipe_linux_arm64_v8.0/gpipe
+    path: ./dist/gpipe-linux-aarch64
     name: gpipe-linux-aarch64
   darwin_amd64:
-    path: ./dist/gpipe_darwin_amd64_v1/gpipe
+    path: ./dist/gpipe-darwin-x86_64
     name: gpipe-darwin-x86_64
   darwin_arm64:
-    path: ./dist/gpipe_darwin_arm64_v8.0/gpipe
+    path: ./dist/gpipe-darwin-aarch64
     name: gpipe-darwin-aarch64
   windows_amd64:
-    path: ./dist/gpipe_windows_amd64_v1/gpipe.exe
+    path: ./dist/gpipe-windows-x86_64.exe
     name: gpipe-windows-x86_64.exe

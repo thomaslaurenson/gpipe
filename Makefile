@@ -58,7 +58,7 @@ ci: fmt_check mod_check vet test ## Run all CI checks locally
 
 # RELEASE
 snapshot: ## Build a local snapshot release with goreleaser
-	goreleaser release --snapshot --clean
+	goreleaser build --snapshot --clean
 
 release_check: ## Validate goreleaser config
 	goreleaser check

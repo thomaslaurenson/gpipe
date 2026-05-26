@@ -4,9 +4,9 @@ on:
   push:
     tags: ['v*']
 
-permissions:
-  contents: write
-  id-token: write
+# Permissions are declared at the called workflow level.
+# Inherited here via secrets: inherit.
+permissions: {}
 
 jobs:
   lint:
