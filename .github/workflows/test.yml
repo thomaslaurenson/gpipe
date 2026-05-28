@@ -16,4 +16,49 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - run: make test
+      - run: go test -race -count=1 ./...
+
+  bash_test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive  # pulls test/extern/bats
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Generate test fixtures
+        run: make generate_test_fixtures
+
+      - name: Lint install.sh
+        run: make lint_bash
+
+      - name: Run bats tests
+        run: make test_bash
+
+  ps_test:
+    runs-on: ubuntu-24.04
+    # ubuntu-24.04 ships PowerShell 7.4.x and Pester 5.x pre-installed.
+    # No install step needed.
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Generate test fixtures
+        run: make generate_test_fixtures
+
+      - name: Lint install.ps1 (PSScriptAnalyzer)
+        run: make lint_ps
+
+      - name: Run Pester tests
+        run: make test_ps
