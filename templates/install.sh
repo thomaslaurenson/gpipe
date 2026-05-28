@@ -557,7 +557,10 @@ main() {
 
   local tmp_dir
   tmp_dir="$(mktemp -d)"
-  trap 'rm -rf "${tmp_dir}"' EXIT
+  # Double-quoted so tmp_dir expands now (at trap-set time), not at EXIT.
+  # A local variable is gone by the time EXIT fires after main returns.
+  # shellcheck disable=SC2064
+  trap "rm -rf '${tmp_dir}'" EXIT
 
 {{- if .Hooks.PreSh}}
   # gpipe test: pre-install-hook
