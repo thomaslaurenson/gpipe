@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+# Mock cosign used by the installer test suite.
+#
+# Simulates cosign verify-blob. Always exits 0 by default, allowing
+# signature verification tests to pass without a real sigstore bundle.
+#
+# Arguments:
+#   $@ - cosign arguments (ignored)
+# Environment:
+#   MOCK_COSIGN_EXIT - when set to a non-zero value, exit with that code
+#                      to simulate a verification failure
+# Returns:
+#   0 on success
+#   value of MOCK_COSIGN_EXIT when set
+
+if [[ -n "${MOCK_COSIGN_EXIT:-}" ]] && [[ "${MOCK_COSIGN_EXIT}" != "0" ]]; then
+  printf 'mock_cosign: verification failed (MOCK_COSIGN_EXIT=%s)\n' "${MOCK_COSIGN_EXIT}" >&2
+  exit "${MOCK_COSIGN_EXIT}"
+fi
+
+exit 0

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+# Mock uname used by the installer test suite.
+#
+# Returns configurable OS and architecture values instead of the real
+# system values, allowing platform detection logic to be tested on any host.
+#
+# Arguments:
+#   -s  print the OS name
+#   -m  print the machine architecture
+# Environment:
+#   MOCK_UNAME_S - OS string to return for -s (default: Linux)
+#   MOCK_UNAME_M - arch string to return for -m (default: x86_64)
+# Returns:
+#   0 always
+
+case "${1:-}" in
+  -s) printf '%s\n' "${MOCK_UNAME_S:-Linux}" ;;
+  -m) printf '%s\n' "${MOCK_UNAME_M:-x86_64}" ;;
+  *)  printf '%s %s\n' "${MOCK_UNAME_S:-Linux}" "${MOCK_UNAME_M:-x86_64}" ;;
+esac
