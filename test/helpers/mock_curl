@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+# Mock curl used by the installer test suite.
+#
+# Copies fixture files from GPIPE_FIXTURE_DIR to the requested output path
+# instead of making real network requests. Supports the -o flag used by the
+# installer's curl invocation.
+#
+# The filename is extracted from the URL path to locate the matching fixture.
+#
+# Arguments:
+#   $@ - curl arguments forwarded from the installer (flags and URL)
+# Environment:
+#   GPIPE_FIXTURE_DIR - directory containing fixture files
+#                       (default: <script_dir>/../fixtures)
+#   MOCK_CURL_EXIT    - when set to a non-zero value, exit with that code
+#                       to simulate a download failure
+# Returns:
+#   0 on success
+#   value of MOCK_CURL_EXIT when set
+#   1 if the fixture file is not found
+
+FIXTURE_DIR="${GPIPE_FIXTURE_DIR:-$(cd "$(dirname "$0")/../fixtures" && pwd)}"
+
+if [[ -n "${MOCK_CURL_EXIT:-}" ]] && [[ "${MOCK_CURL_EXIT}" != "0" ]]; then
+  exit "${MOCK_CURL_EXIT}"
+fi
+
+url=""
+output=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o) output="$2"; shift 2 ;;
+    --*) shift ;;
+    http*) url="$1"; shift ;;
+    *) shift ;;
+  esac
+done
+
+filename="${url##*/}"
+fixture="${FIXTURE_DIR}/${filename}"
+
+if [[ ! -f "${fixture}" ]]; then
+  printf 'mock_curl: no fixture for: %s\n' "${filename}" >&2
+  exit 1
+fi
+
+cp "${fixture}" "${output}"

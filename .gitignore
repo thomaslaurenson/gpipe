@@ -1,5 +1,11 @@
 # CUSTOM
-/bin
+/dist
+/test/fixtures/install_rendered.sh
+/test/fixtures/install_rendered.ps1
+/test/fixtures/fake_binary
+/test/fixtures/fake_binary_go
+/test/fixtures/fake_binary_ps
+/test/fixtures/checksums.txt
 
 # GO
 # If you prefer the allow list template instead of the deny list, see community template:
