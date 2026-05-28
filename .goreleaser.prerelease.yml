@@ -23,6 +23,10 @@ builds:
     ldflags:
       - -s -w -X github.com/thomaslaurenson/gpipe/cmd.Version={{.Version}}
 
+snapshot:
+  version_template: "{{ incpatch .Version }}-dev"
+
 git:
   ignore_tags:
     - "*-dev"
+    - "dev"
