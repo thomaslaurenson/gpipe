@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.1.0 - 2026-05-28
+## 1.1.0 - 2026-05-28
 
 ### Added
 
@@ -12,7 +12,7 @@
 - Modularised install scripts to improve testing capability
 - General test coverage in gpipe tool
 
-## v1.0.0 - 2026-05-17
+## 1.0.0 - 2026-05-17
 
 ### Added
 
