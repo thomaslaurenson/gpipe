@@ -199,6 +199,11 @@ function Invoke-DownloadAsset {
     }
 }
 
+# Thin wrapper around the cosign native command; exists so tests can mock it.
+function Invoke-Cosign {
+    & cosign @args
+}
+
 # Verify the cosign signature on checksums.txt.
 #
 # Skips verification when $NoVerify is true. Exits with an error if cosign
@@ -237,7 +242,7 @@ cosign not found in PATH.
     }
 
     Write-Info 'Verifying cosign signature on checksums.txt...'
-    cosign verify-blob `
+    Invoke-Cosign verify-blob `
         --bundle "$TmpDir\checksums.txt.sigstore.json" `
         --certificate-identity-regexp='https://github.com/{{.GithubRepo}}/.github/workflows/.*' `
         --certificate-oidc-issuer='https://token.actions.githubusercontent.com' `

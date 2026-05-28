@@ -107,7 +107,7 @@ Describe 'Confirm-Signature' {
     It 'passes when cosign exits 0' {
         Mock Get-Command { return [PSCustomObject]@{ Name = 'cosign' } } `
             -ParameterFilter { $Name -eq 'cosign' }
-        Mock cosign { $global:LASTEXITCODE = 0 }
+        Mock Invoke-Cosign { $global:LASTEXITCODE = 0 }
 
         { Confirm-Signature -TmpDir $TestDrive -NoVerify $false } | Should -Not -Throw
     }
@@ -115,7 +115,7 @@ Describe 'Confirm-Signature' {
     It 'exits with an error when cosign exits non-zero' {
         Mock Get-Command { return [PSCustomObject]@{ Name = 'cosign' } } `
             -ParameterFilter { $Name -eq 'cosign' }
-        Mock cosign { $global:LASTEXITCODE = 1 }
+        Mock Invoke-Cosign { $global:LASTEXITCODE = 1 }
 
         { Confirm-Signature -TmpDir $TestDrive -NoVerify $false } | Should -Throw
     }
