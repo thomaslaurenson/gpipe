@@ -131,13 +131,17 @@ func TestGenerate_CompletionBlockAbsentWhenDisabled(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	for _, phrase := range []string{"completion bash", "completion zsh", "completion fish"} {
-		if strings.Contains(out.InstallSh, phrase) {
-			t.Errorf("install.sh should not contain %q when completion is disabled", phrase)
+	for _, marker := range []string{
+		"# gpipe test: bash-completions",
+		"# gpipe test: zsh-completions",
+		"# gpipe test: fish-completions",
+	} {
+		if strings.Contains(out.InstallSh, marker) {
+			t.Errorf("install.sh should not contain %q when completions are disabled", marker)
 		}
 	}
-	if strings.Contains(out.InstallPs1, "completion powershell") {
-		t.Error("install.ps1 should not contain powershell completion block when disabled")
+	if strings.Contains(out.InstallPs1, "# gpipe test: powershell-completions") {
+		t.Error("install.ps1 should not contain powershell-completions marker when disabled")
 	}
 }
 
@@ -145,21 +149,42 @@ func TestGenerate_CompletionBlockPresentWhenEnabled(t *testing.T) {
 	cfg, _ := minimalCfg(t)
 	cfg.Completions.Bash = true
 	cfg.Completions.Zsh = true
+	cfg.Completions.Fish = true
 
 	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(out.InstallSh, "completion bash") {
-		t.Error("install.sh should contain bash completion block when enabled")
-	}
-	if !strings.Contains(out.InstallSh, "completion zsh") {
-		t.Error("install.sh should contain zsh completion block when enabled")
+	for _, marker := range []string{
+		"# gpipe test: bash-completions",
+		"# gpipe test: zsh-completions",
+		"# gpipe test: fish-completions",
+	} {
+		if !strings.Contains(out.InstallSh, marker) {
+			t.Errorf("install.sh missing %q when completions are enabled", marker)
+		}
 	}
 }
 
-func TestGenerate_ShHookInjectedAndWrapped(t *testing.T) {
+func TestGenerate_Ps1CompletionsPresentWhenEnabled(t *testing.T) {
+	cfg, _ := minimalCfg(t)
+	cfg.Completions.PowerShell = true
+
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(out.InstallPs1, "# gpipe test: powershell-completions") {
+		t.Error("install.ps1 missing powershell-completions marker when enabled")
+	}
+	if !strings.Contains(out.InstallPs1, "Install-Completion") {
+		t.Error("install.ps1 missing Install-Completion function when enabled")
+	}
+}
+
+func TestGenerate_ShPostHookInjectedAndWrapped(t *testing.T) {
 	cfg, dir := minimalCfg(t)
 
 	hookPath := filepath.Join(dir, "post-install.sh")
@@ -171,18 +196,35 @@ func TestGenerate_ShHookInjectedAndWrapped(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(out.InstallSh, "# --- gpipe: post-install hook ---") {
-		t.Error("missing post-install hook header comment")
+	if !strings.Contains(out.InstallSh, "# gpipe test: post-install-hook") {
+		t.Error("install.sh missing post-install-hook sentinel")
 	}
 	if !strings.Contains(out.InstallSh, "echo 'post hook'") {
-		t.Error("hook content not present in output")
-	}
-	if !strings.Contains(out.InstallSh, "# --- gpipe: end post-install hook ---") {
-		t.Error("missing post-install hook footer comment")
+		t.Error("install.sh missing post hook content")
 	}
 }
 
-func TestGenerate_Ps1HookInjectedAndWrapped(t *testing.T) {
+func TestGenerate_ShPreHookInjectedAndWrapped(t *testing.T) {
+	cfg, dir := minimalCfg(t)
+
+	hookPath := filepath.Join(dir, "pre-install.sh")
+	os.WriteFile(hookPath, []byte("echo 'pre hook'\n"), 0o644)
+	cfg.Hooks.PreSh = hookPath
+
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(out.InstallSh, "# gpipe test: pre-install-hook") {
+		t.Error("install.sh missing pre-install-hook sentinel")
+	}
+	if !strings.Contains(out.InstallSh, "echo 'pre hook'") {
+		t.Error("install.sh missing pre hook content")
+	}
+}
+
+func TestGenerate_Ps1PostHookInjectedAndWrapped(t *testing.T) {
 	cfg, dir := minimalCfg(t)
 
 	hookPath := filepath.Join(dir, "post-install.ps1")
@@ -194,14 +236,31 @@ func TestGenerate_Ps1HookInjectedAndWrapped(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(out.InstallPs1, "# --- gpipe: post-install hook ---") {
-		t.Error("ps1: missing post-install hook header comment")
+	if !strings.Contains(out.InstallPs1, "# gpipe test: post-install-hook") {
+		t.Error("install.ps1 missing post-install-hook sentinel")
 	}
 	if !strings.Contains(out.InstallPs1, "Write-Host 'post hook'") {
-		t.Error("ps1: hook content not present in output")
+		t.Error("install.ps1 missing post hook content")
 	}
-	if !strings.Contains(out.InstallPs1, "# --- gpipe: end post-install hook ---") {
-		t.Error("ps1: missing post-install hook footer comment")
+}
+
+func TestGenerate_Ps1PreHookInjectedAndWrapped(t *testing.T) {
+	cfg, dir := minimalCfg(t)
+
+	hookPath := filepath.Join(dir, "pre-install.ps1")
+	os.WriteFile(hookPath, []byte("Write-Host 'pre hook'\n"), 0o644)
+	cfg.Hooks.PrePs1 = hookPath
+
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(out.InstallPs1, "# gpipe test: pre-install-hook") {
+		t.Error("install.ps1 missing pre-install-hook sentinel")
+	}
+	if !strings.Contains(out.InstallPs1, "Write-Host 'pre hook'") {
+		t.Error("install.ps1 missing pre hook content")
 	}
 }
 
@@ -212,8 +271,16 @@ func TestGenerate_NoHookLeavesNoMarker(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if strings.Contains(out.InstallSh, "PRE_INSTALL_HOOK") || strings.Contains(out.InstallSh, "POST_INSTALL_HOOK") {
-		t.Error("hook markers should be removed entirely when no hooks are provided")
+	for _, marker := range []string{
+		"# gpipe test: pre-install-hook",
+		"# gpipe test: post-install-hook",
+	} {
+		if strings.Contains(out.InstallSh, marker) {
+			t.Errorf("install.sh should not contain %q when no hooks are configured", marker)
+		}
+		if strings.Contains(out.InstallPs1, marker) {
+			t.Errorf("install.ps1 should not contain %q when no hooks are configured", marker)
+		}
 	}
 }
 
@@ -280,6 +347,98 @@ func TestGenerate_CosignIdentityBakedIn(t *testing.T) {
 	}
 	if !strings.Contains(out.InstallPs1, expectedIdentity) {
 		t.Errorf("install.ps1 should contain baked-in cosign identity %q", expectedIdentity)
+	}
+}
+
+func TestGenerate_Ps1FunctionsPresent(t *testing.T) {
+	cfg, _ := minimalCfg(t)
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, fn := range []string{
+		"function Get-Platform",
+		"function Resolve-Asset",
+		"function Invoke-DownloadAsset",
+		"function Confirm-Signature",
+		"function Confirm-Checksum",
+		"function Resolve-InstallDir",
+		"function Install-Binary",
+		"function Update-Path",
+		"function Invoke-Installer",
+	} {
+		if !strings.Contains(out.InstallPs1, fn) {
+			t.Errorf("install.ps1 missing expected function: %s", fn)
+		}
+	}
+}
+
+func TestGenerate_Ps1DotSourceGuardPresent(t *testing.T) {
+	cfg, _ := minimalCfg(t)
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(out.InstallPs1, "MyInvocation.InvocationName -ne '.'") {
+		t.Error("install.ps1 missing dot-source guard for testability")
+	}
+}
+
+func TestGenerate_Ps1ScriptScopeConstants(t *testing.T) {
+	cfg, _ := minimalCfg(t)
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, constant := range []string{
+		"$script:GithubRepo",
+		"$script:Version",
+		"$script:Binary",
+		"$script:InstallName",
+	} {
+		if !strings.Contains(out.InstallPs1, constant) {
+			t.Errorf("install.ps1 missing script-scoped constant: %s", constant)
+		}
+	}
+}
+
+func TestGenerate_ShFunctionsPresent(t *testing.T) {
+	cfg, _ := minimalCfg(t)
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, fn := range []string{
+		"parse_args()",
+		"detect_platform()",
+		"resolve_asset()",
+		"setup_downloader()",
+		"download_assets()",
+		"verify_signature()",
+		"verify_checksum()",
+		"_try_install()",
+		"install_binary()",
+		"manage_path()",
+	} {
+		if !strings.Contains(out.InstallSh, fn) {
+			t.Errorf("install.sh missing expected function: %s", fn)
+		}
+	}
+}
+
+func TestGenerate_ShBashSourceGuardPresent(t *testing.T) {
+	cfg, _ := minimalCfg(t)
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(out.InstallSh, `BASH_SOURCE[0]}" == "${0}"`) {
+		t.Error("install.sh missing BASH_SOURCE guard for testability")
 	}
 }
 
