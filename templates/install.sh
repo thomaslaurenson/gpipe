@@ -597,8 +597,9 @@ main() {
   info "Successfully installed ${INSTALL_NAME} ${VERSION}"
 }
 
-# Guard: run main only when executed directly, not when sourced for testing.
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+# Guard: run main when executed directly or piped (curl|bash), but not when
+# sourced for testing. BASH_SOURCE[0] is unset when piped, so -z catches that.
+if [[ -z "${BASH_SOURCE[0]:-}" || "${BASH_SOURCE[0]}" == "${0}" ]]; then
   main "$@"
 fi
 
