@@ -9,7 +9,7 @@ jobs:
   go_test:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v6
         with:
@@ -21,7 +21,7 @@ jobs:
   bash_test:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           submodules: recursive  # pulls test/extern/bats
 
@@ -47,7 +47,7 @@ jobs:
     # ubuntu-24.04 ships PowerShell 7.4.x and Pester 5.x pre-installed.
     # No install step needed.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v6
         with:
