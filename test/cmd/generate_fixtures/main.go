@@ -1,18 +1,23 @@
-// generate_fixtures renders install_rendered.sh and install_rendered.ps1 into
-// test/fixtures/ using the real gpipe generator with known test values.
+// generate_fixtures renders the install-script fixtures used by the bash (bats)
+// and PowerShell (Pester) test suites into test/fixtures/, using the real gpipe
+// generator so the fixtures always match the current templates rather than
+// being hand-maintained.
 //
-// It produces two variants:
+// It produces:
 //
-//   - install_rendered.sh / install_rendered.ps1 — minimal config, no hooks or
-//     completions. Used by the existing bats and Pester function tests.
+//   - install_rendered.sh / install_rendered.ps1 — rendered from a config with
+//     every shell completion enabled and pre/post hooks injected from
+//     test/fixtures/hooks/. The suites both call individual functions from these
+//     files and grep them for the completion and hook sentinels.
 //
-//   - install_rendered_full.sh / install_rendered_full.ps1 — all completions
-//     enabled and pre/post hooks injected from test/fixtures/hooks/. Used to
-//     verify that hook and completion injection is working correctly.
+//   - checksums.txt (and the fake_binary it covers) — used by the checksum
+//     verification tests.
 //
-// This is called by `make generate_test_fixtures` and is a prerequisite of
-// the bash and PS test targets, ensuring the fixtures always match the current
-// templates rather than being hand-maintained.
+// Fake binaries (fake_binary_go, fake_binary) are written as needed so checksum
+// generation has real files to hash.
+//
+// This is called by `make generate_test_fixtures` and is a prerequisite of the
+// bash and PS test targets.
 //
 // Usage:
 //

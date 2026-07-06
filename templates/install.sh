@@ -228,7 +228,11 @@ verify_signature() {
 
   info "Verifying cosign signature on checksums.txt..."
   local cert_identity
-  cert_identity="https://github.com/{{.GithubRepo}}/.github/workflows/.*"
+  # Anchored (^...$) and with the literal dots escaped so the pattern matches
+  # only the exact repository's workflow identities. The trailing .+ still
+  # allows any workflow file and git ref within this repo, which is required
+  # since the release workflow name is not known at generation time.
+  cert_identity="^https://github\\.com/{{.GithubRepo}}/\\.github/workflows/.+$"
   cosign verify-blob \
     --bundle "${dir}/checksums.txt.sigstore.json" \
     --certificate-identity-regexp="${cert_identity}" \
@@ -253,7 +257,11 @@ verify_checksum() {
 
   info "Verifying checksum..."
 
-  expected_hash="$(grep -F "  ${asset_name}" "${dir}/checksums.txt" | awk '{print $1}')"
+  # Match the filename field ($2) exactly rather than doing a substring grep.
+  # A substring match means one asset name that is a prefix of another (e.g.
+  # "tool-linux-x86_64" and "tool-linux-x86_64-musl") matches multiple lines,
+  # yielding several hashes and a false "checksum mismatch" on a valid install.
+  expected_hash="$(awk -v name="${asset_name}" '$2 == name {print $1}' "${dir}/checksums.txt")"
   if [[ -z "${expected_hash}" ]]; then
     error "Checksum not found for ${asset_name} in checksums.txt"
   fi

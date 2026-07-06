@@ -423,6 +423,87 @@ func TestParseGitRemote_Invalid(t *testing.T) {
 	}
 }
 
+// Shell-metacharacter payloads that must never be accepted, because these
+// values are interpolated into the generated install.sh / install.ps1.
+// Each is single-slash and whitespace-free so it would slip past a naive
+// "no spaces, one slash" repo check.
+var injectionPayloads = []string{
+	`a";id;"`,
+	"a$(id)",
+	"a`id`",
+	"a;rm -rf x",
+	"a|b",
+	"a&&b",
+	"a>b",
+	"a'b",
+}
+
+func TestValidate_RejectsMetacharsInRepo(t *testing.T) {
+	t.Parallel()
+	for _, p := range injectionPayloads {
+		cfg := minimalValidConfig()
+		cfg.GithubRepo = "owner/" + p
+		errs := gpipe.Validate(cfg, gpipe.ModeValidate)
+		assertContainsError(t, errs, "invalid repo")
+	}
+}
+
+func TestValidate_RejectsMetacharsInBinary(t *testing.T) {
+	t.Parallel()
+	for _, p := range injectionPayloads {
+		cfg := minimalValidConfig()
+		cfg.Binary = p
+		errs := gpipe.Validate(cfg, gpipe.ModeValidate)
+		assertContainsError(t, errs, "invalid binary")
+	}
+}
+
+func TestValidate_RejectsMetacharsInInstallName(t *testing.T) {
+	t.Parallel()
+	for _, p := range injectionPayloads {
+		cfg := minimalValidConfig()
+		cfg.InstallName = p
+		errs := gpipe.Validate(cfg, gpipe.ModeValidate)
+		assertContainsError(t, errs, "invalid install-name")
+	}
+}
+
+func TestValidate_RejectsMetacharsInAssetName(t *testing.T) {
+	t.Parallel()
+	for _, p := range injectionPayloads {
+		cfg := minimalValidConfig()
+		cfg.Platforms = map[string]gpipe.PlatformEntry{
+			"linux_amd64": {Path: "/nonexistent/path", Name: p},
+		}
+		errs := gpipe.Validate(cfg, gpipe.ModeValidate)
+		assertContainsError(t, errs, "invalid asset name")
+	}
+}
+
+func TestValidate_RejectsEmptyAssetName(t *testing.T) {
+	t.Parallel()
+	cfg := minimalValidConfig()
+	cfg.Platforms = map[string]gpipe.PlatformEntry{
+		"linux_amd64": {Path: "/nonexistent/path", Name: ""},
+	}
+	errs := gpipe.Validate(cfg, gpipe.ModeValidate)
+	assertContainsError(t, errs, "empty asset name")
+}
+
+func TestValidate_AcceptsDottedAssetNames(t *testing.T) {
+	t.Parallel()
+	cfg := minimalValidConfig()
+	cfg.Platforms = map[string]gpipe.PlatformEntry{
+		"windows_amd64": {Path: "/nonexistent/path", Name: "my.cli-tool_v2.exe"},
+	}
+	errs := gpipe.Validate(cfg, gpipe.ModeValidate)
+	for _, e := range errs {
+		if contains(e.Error(), "asset name") {
+			t.Errorf("valid dotted asset name was rejected: %v", e)
+		}
+	}
+}
+
 func assertContainsError(t *testing.T, errs []error, substr string) {
 	t.Helper()
 	for _, e := range errs {

@@ -40,8 +40,20 @@ var semverPattern = regexp.MustCompile(`^v?[0-9]+\.[0-9]+(\.[0-9]+)?$`)
 // semverRelaxedPattern also allows placeholder values like v0.0.0-dry-run
 var semverRelaxedPattern = regexp.MustCompile(`^v?[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9._-]+)?$`)
 
-// repoPattern matches owner/repo
-var repoPattern = regexp.MustCompile(`^[^/\s]+/[^/\s]+$`)
+// repoPattern matches owner/repo.
+//
+// The character classes deliberately match GitHub's own allowed owner/repo
+// characters (letters, digits, and '-' for owners; plus '.' and '_' for repos)
+// and, crucially, exclude every shell metacharacter. Because these values are
+// interpolated into the generated install.sh / install.ps1, a permissive
+// pattern would allow command injection into the emitted scripts.
+var repoPattern = regexp.MustCompile(`^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$`)
+
+// namePattern matches shell-safe identifiers used for the binary name,
+// install-name, and per-platform asset filenames. It permits only letters,
+// digits, '.', '_' and '-' so that these values cannot break out of the
+// quoted strings they are injected into within the generated scripts.
+var namePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // Hooks holds optional hook file paths.
 type Hooks struct {
@@ -257,6 +269,12 @@ func Validate(cfg *Config, mode ValidationMode) []error {
 
 	if cfg.Binary == "" {
 		errs = append(errs, errors.New("missing required config field: binary"))
+	} else if !namePattern.MatchString(cfg.Binary) {
+		errs = append(errs, fmt.Errorf("invalid binary %q: allowed characters are letters, digits, '.', '_' and '-'", cfg.Binary))
+	}
+
+	if cfg.InstallName != "" && !namePattern.MatchString(cfg.InstallName) {
+		errs = append(errs, fmt.Errorf("invalid install-name %q: allowed characters are letters, digits, '.', '_' and '-'", cfg.InstallName))
 	}
 
 	if len(cfg.Platforms) == 0 {
@@ -274,6 +292,11 @@ func Validate(cfg *Config, mode ValidationMode) []error {
 			entry, ok := cfg.Platforms[p]
 			if !ok {
 				continue
+			}
+			if entry.Name == "" {
+				errs = append(errs, fmt.Errorf("platform %q has empty asset name", p))
+			} else if !namePattern.MatchString(entry.Name) {
+				errs = append(errs, fmt.Errorf("invalid asset name %q for platform %q: allowed characters are letters, digits, '.', '_' and '-'", entry.Name, p))
 			}
 			if first, dup := seen[entry.Name]; dup {
 				errs = append(errs, fmt.Errorf("platforms %q and %q resolve to the same asset name %q: asset names must be unique", first, p, entry.Name))
