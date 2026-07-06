@@ -341,12 +341,17 @@ func TestGenerate_CosignIdentityBakedIn(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	expectedIdentity := "https://github.com/owner/mycli/.github/workflows/.*"
-	if !strings.Contains(out.InstallSh, expectedIdentity) {
-		t.Errorf("install.sh should contain baked-in cosign identity %q", expectedIdentity)
+	// The identity is anchored (^...$) with the literal dots escaped, so it
+	// matches only this repository's workflow identities. A bash double-quoted
+	// string requires the backslashes doubled in the rendered install.sh; the
+	// PowerShell single-quoted string keeps them single.
+	shIdentity := `^https://github\\.com/owner/mycli/\\.github/workflows/.+$`
+	if !strings.Contains(out.InstallSh, shIdentity) {
+		t.Errorf("install.sh should contain anchored cosign identity %q", shIdentity)
 	}
-	if !strings.Contains(out.InstallPs1, expectedIdentity) {
-		t.Errorf("install.ps1 should contain baked-in cosign identity %q", expectedIdentity)
+	ps1Identity := `^https://github\.com/owner/mycli/\.github/workflows/.+$`
+	if !strings.Contains(out.InstallPs1, ps1Identity) {
+		t.Errorf("install.ps1 should contain anchored cosign identity %q", ps1Identity)
 	}
 }
 

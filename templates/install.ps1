@@ -7,6 +7,13 @@
 
 #Requires -Version 5.1
 
+[CmdletBinding()]
+param(
+    [switch]$User,
+    [switch]$Help,
+    [switch]$NoVerify
+)
+
 $ErrorActionPreference = 'Stop'
 $ProgressPreference    = 'SilentlyContinue'
 
@@ -244,7 +251,7 @@ cosign not found in PATH.
     Write-Info 'Verifying cosign signature on checksums.txt...'
     Invoke-Cosign verify-blob `
         --bundle "$TmpDir\checksums.txt.sigstore.json" `
-        --certificate-identity-regexp='https://github.com/{{.GithubRepo}}/.github/workflows/.*' `
+        --certificate-identity-regexp='^https://github\.com/{{.GithubRepo}}/\.github/workflows/.+$' `
         --certificate-oidc-issuer='https://token.actions.githubusercontent.com' `
         "$TmpDir\checksums.txt"
     if ($LASTEXITCODE -ne 0) { Exit-Error 'cosign signature verification failed' }
@@ -441,25 +448,28 @@ function Update-Path {
         [bool]$UserInstall
     )
 
-    if ($UserInstall) {
-        $userPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
-        if ($userPath -notlike "*$InstallDir*") {
-            [Environment]::SetEnvironmentVariable('PATH', "$InstallDir;$userPath", 'User')
-            Write-Warn "Added $InstallDir to user PATH. Restart your terminal for the change to take effect."
-        }
-    } else {
-        # Persist to the Machine PATH so all future sessions see the binary.
-        # A system install already requires Administrator rights, so this will
-        # not fail with an access denied error.
-        $machinePath = [Environment]::GetEnvironmentVariable('PATH', 'Machine')
-        if ($machinePath -notlike "*$InstallDir*") {
-            [Environment]::SetEnvironmentVariable('PATH', "$InstallDir;$machinePath", 'Machine')
-            Write-Warn "Added $InstallDir to system PATH. Restart your terminal for the change to take effect."
-        }
-        # Also update the current session immediately
-        if ($env:PATH -notlike "*$InstallDir*") {
-            $env:PATH = "$InstallDir;$env:PATH"
-        }
+    # User installs persist to the 'User' PATH; system installs persist to the
+    # 'Machine' PATH (a system install already requires Administrator rights,
+    # so the Machine write will not fail with access denied).
+    $scope = if ($UserInstall) { 'User' } else { 'Machine' }
+    $label = if ($UserInstall) { 'user' } else { 'system' }
+
+    $persisted = [Environment]::GetEnvironmentVariable('PATH', $scope)
+
+    # Split on ';' and compare each entry exactly rather than using a substring
+    # match: a substring check treats 'C:\foo\bar' as already present when the
+    # PATH only contains 'C:\foo\barbaz'.
+    $persistedParts = @($persisted -split ';' | Where-Object { $_ -ne '' })
+    if ($persistedParts -notcontains $InstallDir) {
+        $newPersisted = (@($InstallDir) + $persistedParts) -join ';'
+        [Environment]::SetEnvironmentVariable('PATH', $newPersisted, $scope)
+        Write-Warn "Added $InstallDir to $label PATH. Restart your terminal for the change to take effect."
+    }
+
+    # Update the current session immediately, with the same exact-entry check.
+    $sessionParts = @($env:PATH -split ';' | Where-Object { $_ -ne '' })
+    if ($sessionParts -notcontains $InstallDir) {
+        $env:PATH = (@($InstallDir) + $sessionParts) -join ';'
     }
 }
 
@@ -521,12 +531,8 @@ function Invoke-Installer {
 }
 
 # Guard: run only when executed directly, not when dot-sourced for testing.
+# Parameters are bound by the script-level param() block at the top of the file.
 if ($MyInvocation.InvocationName -ne '.') {
-    param(
-        [switch]$User,
-        [switch]$Help,
-        [switch]$NoVerify
-    )
     try {
         Invoke-Installer -User:$User -Help:$Help -NoVerify:$NoVerify
     } catch {

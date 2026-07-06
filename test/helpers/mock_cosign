@@ -2,17 +2,47 @@
 
 # Mock cosign used by the installer test suite.
 #
-# Simulates cosign verify-blob. Always exits 0 by default, allowing
-# signature verification tests to pass without a real sigstore bundle.
+# Simulates cosign verify-blob. For a verify-blob invocation it asserts that the
+# installer passes a hardened certificate identity (anchored with ^...$ and
+# pointing at a GitHub Actions workflow) and the expected OIDC issuer, so that a
+# regression to an unanchored / over-broad identity regexp fails the tests.
+# Otherwise exits 0, allowing signature verification tests to pass without a
+# real sigstore bundle.
 #
 # Arguments:
-#   $@ - cosign arguments (ignored)
+#   $@ - cosign arguments
 # Environment:
 #   MOCK_COSIGN_EXIT - when set to a non-zero value, exit with that code
 #                      to simulate a verification failure
 # Returns:
 #   0 on success
+#   3 if a verify-blob invocation is missing the hardened identity/issuer
 #   value of MOCK_COSIGN_EXIT when set
+
+if [[ "${1:-}" == "verify-blob" ]]; then
+  identity=""
+  issuer=""
+  for arg in "$@"; do
+    case "${arg}" in
+      --certificate-identity-regexp=*) identity="${arg#*=}" ;;
+      --certificate-oidc-issuer=*)     issuer="${arg#*=}" ;;
+    esac
+  done
+
+  # Identity must be anchored at both ends and reference a GitHub workflow.
+  if [[ "${identity}" != '^'* || "${identity}" != *'$' ]]; then
+    printf 'mock_cosign: --certificate-identity-regexp is not anchored (^...$): %s\n' "${identity}" >&2
+    exit 3
+  fi
+  if [[ "${identity}" != *github*workflows* ]]; then
+    printf 'mock_cosign: --certificate-identity-regexp missing expected workflow path: %s\n' "${identity}" >&2
+    exit 3
+  fi
+  if [[ "${issuer}" != "https://token.actions.githubusercontent.com" ]]; then
+    printf 'mock_cosign: unexpected --certificate-oidc-issuer: %s\n' "${issuer}" >&2
+    exit 3
+  fi
+fi
 
 if [[ -n "${MOCK_COSIGN_EXIT:-}" ]] && [[ "${MOCK_COSIGN_EXIT}" != "0" ]]; then
   printf 'mock_cosign: verification failed (MOCK_COSIGN_EXIT=%s)\n' "${MOCK_COSIGN_EXIT}" >&2
