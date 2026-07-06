@@ -16,3 +16,6 @@ platforms:
   windows_amd64:
     path: ./dist/gpipe-windows-x86_64.exe
     name: gpipe-windows-x86_64.exe
+  windows_arm64:
+    path: ./dist/gpipe-windows-aarch64.exe
+    name: gpipe-windows-aarch64.exe
