@@ -210,7 +210,7 @@ setup() {
 @test "verify_checksum: passes when hash matches" {
   run verify_checksum "${FIXTURE_DIR}" "fake_binary"
   (( status == 0 ))
-  [[ "${output}" =~ "Checksum OK" ]]
+  [[ "${output}" =~ "Checksum verified" ]]
 }
 
 @test "verify_checksum: fails when hash does not match" {

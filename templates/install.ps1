@@ -37,61 +37,80 @@ $script:InstallExeName = if ($script:InstallName -like '*.exe') { $script:Instal
 # Check for colour support via NO_COLOR environment variable
 $script:NoColor = ($null -ne $env:NO_COLOR)
 
-# Print a green [INFO] label followed by Msg to stdout.
+# Print one or more messages under a fixed-width [LEVEL] label.
+#
+# Every line of output carries a label, so output stays aligned and greppable
+# and there is only one visual language to read. The first message is the
+# message proper; any further ones are continuation lines, printed with the
+# same label and a two-space indent so a multi-line message reads as a single
+# block rather than as several unrelated ones. Messages containing newlines
+# are split, so captured output from another command still comes out one
+# labelled line at a time instead of breaking the alignment.
 #
 # Parameters:
-#   Msg - informational text to display
+#   Label  - level label, e.g. [INFO]
+#   Colour - ConsoleColor name for the label
+#   Msg    - message and any continuation lines
+function Write-Label {
+    param(
+        [string]$Label,
+        [string]$Colour,
+        [string[]]$Msg
+    )
+
+    # PadRight(7) pads the widest label ([ERROR]) to a fixed column, so the
+    # text of every line starts at column 9 regardless of level.
+    $padded = $Label.PadRight(7)
+    $isFirst = $true
+    foreach ($entry in $Msg) {
+        foreach ($line in ($entry -split "`r?`n")) {
+            $indent = if ($isFirst) { ' ' } else { '   ' }
+            if ($script:NoColor) {
+                Write-Host "$padded$indent$line"
+            } else {
+                Write-Host $padded -ForegroundColor $Colour -NoNewline
+                Write-Host "$indent$line"
+            }
+            $isFirst = $false
+        }
+    }
+}
+
+# Print an informational message under a cyan [INFO] label.
+#
+# Parameters:
+#   Msg - message and any continuation lines
 function Write-Info {
-    param([string]$Msg)
-    if ($script:NoColor) {
-        Write-Host "[INFO]  $Msg"
-    } else {
-        Write-Host '[INFO]  ' -ForegroundColor Green -NoNewline
-        Write-Host $Msg
-    }
+    param([string[]]$Msg)
+    Write-Label -Label '[INFO]' -Colour Cyan -Msg $Msg
 }
 
-# Print a yellow [WARN] label followed by Msg to stdout.
+# Print a success message under a green [OK] label.
 #
 # Parameters:
-#   Msg - warning text to display
+#   Msg - message and any continuation lines
+function Write-Ok {
+    param([string[]]$Msg)
+    Write-Label -Label '[OK]' -Colour Green -Msg $Msg
+}
+
+# Print a warning under a yellow [WARN] label.
+#
+# Parameters:
+#   Msg - message and any continuation lines
 function Write-Warn {
-    param([string]$Msg)
-    if ($script:NoColor) {
-        Write-Host "[WARN]  $Msg"
-    } else {
-        Write-Host '[WARN]  ' -ForegroundColor Yellow -NoNewline
-        Write-Host $Msg
-    }
+    param([string[]]$Msg)
+    Write-Label -Label '[WARN]' -Colour Yellow -Msg $Msg
 }
 
-# Print a cyan > prefix followed by Msg to stdout.
+# Print an error under a red [ERROR] label and abort.
 #
 # Parameters:
-#   Msg - step description to display
-function Write-Step {
-    param([string]$Msg)
-    if ($script:NoColor) {
-        Write-Host "  > $Msg"
-    } else {
-        Write-Host '  > ' -ForegroundColor Cyan -NoNewline
-        Write-Host $Msg
-    }
-}
-
-# Print an error message and exit with code 1.
-#
-# Parameters:
-#   Msg - error text to display
+#   Msg - message and any continuation lines
 function Exit-Error {
-    param([string]$Msg)
-    if ($script:NoColor) {
-        Write-Host "[ERROR] $Msg"
-    } else {
-        Write-Host '[ERROR] ' -ForegroundColor Red -NoNewline
-        Write-Host $Msg
-    }
-    throw $Msg
+    param([string[]]$Msg)
+    Write-Label -Label '[ERROR]' -Colour Red -Msg $Msg
+    throw ($Msg -join ' ')
 }
 
 # Print help and usage information to stdout
@@ -196,8 +215,7 @@ function Invoke-DownloadAsset {
     $checksumsUrl    = "https://github.com/$script:GithubRepo/releases/download/$script:Version/checksums.txt"
     $checksumsSigUrl = "https://github.com/$script:GithubRepo/releases/download/$script:Version/checksums.txt.sigstore.json"
 
-    Write-Info "Downloading $script:Binary $script:Version for $(Get-Platform)..."
-    Write-Step $downloadUrl
+    Write-Info "Downloading $script:Binary $script:Version for $(Get-Platform)", $downloadUrl
 
     try {
         Invoke-WebRequest -Uri $downloadUrl -OutFile "$TmpDir\$AssetName" -UseBasicParsing -TimeoutSec 60
@@ -242,10 +260,10 @@ function Confirm-Signature {
     )
 
     if ($NoVerify) {
-        Write-Warn 'Skipping cosign signature verification (-NoVerify passed)'
-        Write-Warn 'The checksum check that still runs only detects accidental'
-        Write-Warn 'corruption: checksums.txt comes from the same origin as the'
-        Write-Warn 'binary, so it offers no protection against a tampered release.'
+        Write-Warn 'Skipping cosign signature verification (-NoVerify passed)',
+                   'The checksum check that still runs only detects accidental',
+                   'corruption: checksums.txt comes from the same origin as the',
+                   'binary, so it offers no protection against a tampered release.'
         return
     }
 
@@ -263,17 +281,39 @@ cosign not found in PATH.
 '@
     }
 
-    Write-Info 'Verifying cosign signature on checksums.txt...'
+    Write-Info 'Verifying cosign signature on checksums.txt'
     # Anchored (^...$) to this repository and to a workflow run triggered by
     # pushing this exact version tag (see cosignCertIdentity in generator.go
     # for the full rationale).
-    Invoke-Cosign verify-blob `
-        --bundle "$TmpDir\checksums.txt.sigstore.json" `
-        --certificate-identity-regexp='{{.CosignCertIdentity}}' `
-        --certificate-oidc-issuer='https://token.actions.githubusercontent.com' `
-        "$TmpDir\checksums.txt"
-    if ($LASTEXITCODE -ne 0) { Exit-Error 'cosign signature verification failed' }
-    Write-Step 'Cosign signature OK'
+    #
+    # cosign writes its own progress and its "Verified OK" confirmation to
+    # stderr. Captured rather than passed through, so a successful run reports
+    # the result in gpipe's own format; on failure the captured text is
+    # replayed under the [ERROR] label, where it is the useful diagnostic.
+    # 2>&1 merges stderr into the pipeline as ErrorRecord objects, so each is
+    # cast to a string before being handed to the output helpers. The child
+    # scope drops ErrorActionPreference back to Continue for the duration of
+    # the call: under 'Stop', some PowerShell versions treat a native
+    # command's stderr as a terminating error, which would abort the install
+    # on cosign's ordinary progress chatter rather than on a real failure.
+    $cosignOut = & {
+        $ErrorActionPreference = 'Continue'
+        Invoke-Cosign verify-blob `
+            --bundle "$TmpDir\checksums.txt.sigstore.json" `
+            --certificate-identity-regexp='{{.CosignCertIdentity}}' `
+            --certificate-oidc-issuer='https://token.actions.githubusercontent.com' `
+            "$TmpDir\checksums.txt" 2>&1
+    }
+    if ($LASTEXITCODE -ne 0) {
+        # Where-Object first: piping a $null $cosignOut still sends one item
+        # down the pipeline, and calling .ToString() on it would throw.
+        $detail = @($cosignOut | Where-Object { $null -ne $_ } | ForEach-Object { $_.ToString() })
+        if ($detail.Count -gt 0) {
+            Exit-Error (@('cosign signature verification failed') + $detail)
+        }
+        Exit-Error 'cosign signature verification failed'
+    }
+    Write-Ok 'Cosign signature verified'
 }
 
 # Verify the SHA-256 checksum of a downloaded asset against checksums.txt.
@@ -289,7 +329,7 @@ function Confirm-Checksum {
         [string]$AssetName
     )
 
-    Write-Info 'Verifying checksum...'
+    Write-Info 'Verifying checksum'
 
     $checksumLine = Get-Content "$TmpDir\checksums.txt" |
         Where-Object { $_ -like "*  $AssetName" }
@@ -302,10 +342,10 @@ function Confirm-Checksum {
     $actualHash   = (Get-FileHash -Algorithm SHA256 "$TmpDir\$AssetName").Hash.ToLower()
 
     if ($expectedHash -ne $actualHash) {
-        Exit-Error "Checksum mismatch for ${AssetName}:`n  expected: $expectedHash`n  actual:   $actualHash"
+        Exit-Error "Checksum mismatch for $AssetName", "expected: $expectedHash", "actual:   $actualHash"
     }
 
-    Write-Step 'Checksum OK'
+    Write-Ok 'Checksum verified'
 }
 
 # Resolve the installation directory based on install type and privileges.
@@ -350,8 +390,10 @@ function Resolve-InstallDir {
     # with redirected stdin (it is only false for Windows services), so it
     # is combined with an explicit redirected-input check before prompting.
     if ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
-        Write-Host ''
-        Write-Host "Insufficient permissions to install to $systemDir" -ForegroundColor Yellow
+        Write-Warn "Insufficient permissions to install to $systemDir"
+        # The menu and its prompt are interactive UI rather than log output,
+        # so they are the one place that stays unlabelled: prefixing the
+        # choices with [WARN] would read as three more warnings.
         Write-Host ''
         Write-Host '  1) Re-run as Administrator (opens elevated prompt)'
         Write-Host "  2) Install to $userDir (no elevation)"
@@ -362,7 +404,7 @@ function Resolve-InstallDir {
         switch ($choice.Trim()) {
             '1' {
                 if (-not [string]::IsNullOrEmpty($PSCommandPath)) {
-                    Write-Info 'Launching elevated session...'
+                    Write-Info 'Launching elevated session'
                     # Use the same PowerShell edition that is currently running:
                     # pwsh for PowerShell 7+ (Core), powershell for Windows PS 5.1.
                     $psExe    = if ($PSVersionTable.PSEdition -eq 'Core') { 'pwsh' } else { 'powershell' }
@@ -375,28 +417,24 @@ function Resolve-InstallDir {
                     # The user already has install.ps1 on disk from the Invoke-WebRequest
                     # step, so direct them to run it from an elevated prompt.
                     $psExe = if ($PSVersionTable.PSEdition -eq 'Core') { 'pwsh' } else { 'powershell' }
-                    Write-Host '[ERROR] Cannot auto-elevate from a piped session. Run from an elevated prompt:' -ForegroundColor Red
-                    Write-Host "          $psExe -File .\install.ps1"
-                    exit 1
+                    Exit-Error 'Cannot auto-elevate from a piped session. Run from an elevated prompt:', "  $psExe -File .\install.ps1"
                 }
             }
             '2' {
                 return [PSCustomObject]@{ Path = $userDir; IsUserInstall = $true }
             }
-            default { Exit-Error 'Installation aborted.' }
+            default { Exit-Error 'Installation aborted' }
         }
     } else {
         $psExe = if ($PSVersionTable.PSEdition -eq 'Core') { 'pwsh' } else { 'powershell' }
-        Write-Host "[ERROR] Insufficient permissions to install to $systemDir" -ForegroundColor Red
-        Write-Host ''
-        Write-Host 'To install in an elevated PowerShell session, download and run:'
-        Write-Host "  Invoke-WebRequest -Uri `"https://github.com/$script:GithubRepo/releases/download/$script:Version/install.ps1`" -OutFile install.ps1"
-        Write-Host "  Start-Process $psExe -Verb RunAs -ArgumentList `"-File .\install.ps1`" -Wait"
-        Write-Host ''
-        Write-Host 'To install without elevation (user install):'
-        Write-Host "  Invoke-WebRequest -Uri `"https://github.com/$script:GithubRepo/releases/download/$script:Version/install.ps1`" -OutFile install.ps1"
-        Write-Host '  .\install.ps1 -User'
-        exit 1
+        $downloadCmd = "  Invoke-WebRequest -Uri `"https://github.com/$script:GithubRepo/releases/download/$script:Version/install.ps1`" -OutFile install.ps1"
+        Exit-Error "Insufficient permissions to install to $systemDir", `
+                   'To install in an elevated PowerShell session, download and run:', `
+                   $downloadCmd, `
+                   "  Start-Process $psExe -Verb RunAs -ArgumentList `"-File .\install.ps1`" -Wait", `
+                   'To install without elevation (user install):', `
+                   $downloadCmd, `
+                   '  .\install.ps1 -User'
     }
 }
 
@@ -420,7 +458,7 @@ function Install-Binary {
     }
 
     Copy-Item "$TmpDir\$AssetName" "$InstallDir\$script:InstallExeName" -Force
-    Write-Info "Installed $script:InstallName to $InstallDir\$script:InstallExeName"
+    Write-Ok "Installed $script:InstallName to $InstallDir\$script:InstallExeName"
 }
 
 {{- if .Completions.PowerShell}}
@@ -459,7 +497,7 @@ function Install-Completion {
     $content = Get-Content $PROFILE -Raw -ErrorAction SilentlyContinue
     if (-not $content -or $content -notmatch [regex]::Escape($marker)) {
         Add-Content -Path $PROFILE -Value "`n$marker`n$completionOutput"
-        Write-Step "PowerShell completions -> $PROFILE"
+        Write-Ok "PowerShell completions -> $PROFILE"
     }
 }
 {{- end}}
@@ -556,7 +594,7 @@ function Invoke-Installer {
 
         Update-Path -InstallDir $installDir -UserInstall $resolvedInstall.IsUserInstall
 
-        Write-Info "Successfully installed $script:InstallName $script:Version"
+        Write-Ok "Successfully installed $script:InstallName $script:Version"
 
     } finally {
         if ($tmpDir -and (Test-Path $tmpDir)) {
@@ -574,13 +612,9 @@ if ($MyInvocation.InvocationName -ne '.') {
         # Exit-Error already prints a formatted [ERROR] line for expected
         # failures before throwing. This catch is the backstop for everything
         # else (unhandled .NET exceptions, cmdlet errors) so the installer
-        # never dies with no output at all.
-        if ($script:NoColor) {
-            Write-Host "[ERROR] $_"
-        } else {
-            Write-Host '[ERROR] ' -ForegroundColor Red -NoNewline
-            Write-Host $_
-        }
+        # never dies with no output at all. It goes through Write-Label rather
+        # than Exit-Error, which would throw a second time from inside a catch.
+        Write-Label -Label '[ERROR]' -Colour Red -Msg "$_"
         exit 1
     }
 }

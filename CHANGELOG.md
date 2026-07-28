@@ -12,6 +12,7 @@
 - Bind the cosign certificate identity to the release tag so signatures cannot be replayed
 - Reject unknown keys in .gpipe.yml and non-github.com remotes, accept prerelease versions
 - Limit each generated script to the platforms it can actually install
+- Give every line of installer output a level label, and hide cosign and download chatter unless it fails
 
 ### Fixed
 
