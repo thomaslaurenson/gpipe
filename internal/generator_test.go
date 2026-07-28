@@ -2,6 +2,7 @@ package gpipe_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -57,9 +58,12 @@ func TestGenerate_ChecksumFormat(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	// One line per platform binary, plus install.sh and install.ps1 themselves
+	// (added so the scripts can be verified out-of-band the same way the
+	// binaries are).
 	lines := strings.Split(strings.TrimSpace(out.Checksums), "\n")
-	if len(lines) != 1 {
-		t.Fatalf("expected 1 checksum line, got %d", len(lines))
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 checksum lines, got %d: %q", len(lines), lines)
 	}
 	// Format: "<64 hex chars>  <filename>" (two-space separator is sha256sum format)
 	parts := strings.SplitN(lines[0], "  ", 2)
@@ -71,6 +75,12 @@ func TestGenerate_ChecksumFormat(t *testing.T) {
 	}
 	if parts[1] != "mycli-linux-x86_64" {
 		t.Errorf("expected filename mycli-linux-x86_64, got %q", parts[1])
+	}
+	if !strings.Contains(lines[1], "  install.sh") {
+		t.Errorf("expected install.sh checksum entry, got: %q", lines[1])
+	}
+	if !strings.Contains(lines[2], "  install.ps1") {
+		t.Errorf("expected install.ps1 checksum entry, got: %q", lines[2])
 	}
 }
 
@@ -107,9 +117,10 @@ func TestGenerate_MultiplePlatformsChecksumOrder(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	// 3 platform binaries, then install.sh and install.ps1 themselves.
 	lines := strings.Split(strings.TrimSpace(out.Checksums), "\n")
-	if len(lines) != 3 {
-		t.Fatalf("expected 3 checksum lines, got %d", len(lines))
+	if len(lines) != 5 {
+		t.Fatalf("expected 5 checksum lines, got %d: %q", len(lines), lines)
 	}
 
 	// Verify canonical order: linux_amd64, linux_arm64, darwin_amd64
@@ -121,6 +132,12 @@ func TestGenerate_MultiplePlatformsChecksumOrder(t *testing.T) {
 	}
 	if !strings.Contains(lines[2], "mycli-darwin-x86_64") {
 		t.Errorf("expected darwin_amd64 third, got: %q", lines[2])
+	}
+	if !strings.Contains(lines[3], "  install.sh") {
+		t.Errorf("expected install.sh fourth, got: %q", lines[3])
+	}
+	if !strings.Contains(lines[4], "  install.ps1") {
+		t.Errorf("expected install.ps1 fifth, got: %q", lines[4])
 	}
 }
 
@@ -300,6 +317,51 @@ func TestGenerate_BashSyntaxErrorInHookFails(t *testing.T) {
 	}
 }
 
+func TestGenerate_Ps1SyntaxErrorInHookFails(t *testing.T) {
+	if _, err := exec.LookPath("pwsh"); err != nil {
+		t.Skip("pwsh not installed, cannot exercise the ps1 syntax check")
+	}
+
+	cfg, dir := minimalCfg(t)
+
+	hookPath := filepath.Join(dir, "bad.ps1")
+	os.WriteFile(hookPath, []byte("if (\n"), 0o644) // intentionally broken PowerShell
+	cfg.Hooks.PrePs1 = hookPath
+
+	_, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
+	if err == nil {
+		t.Fatal("expected error for powershell syntax error in hook, got nil")
+	}
+	if !strings.Contains(err.Error(), "powershell syntax error") {
+		t.Errorf("expected 'powershell syntax error' in error, got: %v", err)
+	}
+}
+
+func TestGenerate_Ps1SyntaxCheckSkippedWhenPwshMissing(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+
+	dir := t.TempDir()
+	hookPath := filepath.Join(dir, "hook.ps1")
+	os.WriteFile(hookPath, []byte("Write-Host 'hello'\n"), 0o644)
+
+	cfg := &gpipe.Config{
+		GithubRepo:  "owner/mycli",
+		Version:     "v1.2.3",
+		Binary:      "mycli",
+		InstallName: "mycli",
+		Platforms: map[string]gpipe.PlatformEntry{
+			"linux_amd64": {Path: "/nonexistent", Name: "mycli-linux-x86_64"},
+		},
+		Hooks: gpipe.Hooks{PrePs1: hookPath},
+	}
+
+	// Should not error on missing pwsh - syntax check is skipped with a warning
+	_, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeDryRun)
+	if err != nil {
+		t.Fatalf("missing pwsh should skip syntax check, not error: %v", err)
+	}
+}
+
 func TestGenerate_DryRunSkipsMissingBinary(t *testing.T) {
 	cfg := &gpipe.Config{
 		GithubRepo:  "owner/mycli",
@@ -315,8 +377,17 @@ func TestGenerate_DryRunSkipsMissingBinary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dry-run should not error on missing binary, got: %v", err)
 	}
-	if strings.TrimSpace(out.Checksums) != "" {
-		t.Errorf("expected empty checksums for missing binary in dry-run, got: %q", out.Checksums)
+	if strings.Contains(out.Checksums, "mycli-linux-x86_64") {
+		t.Errorf("missing binary should have no checksum entry, got: %q", out.Checksums)
+	}
+	// install.sh/install.ps1 are rendered in-memory regardless of which
+	// platform binaries are present on disk, so their checksum entries are
+	// still expected even when every platform binary is missing.
+	if !strings.Contains(out.Checksums, "  install.sh") {
+		t.Errorf("expected install.sh checksum entry even with missing binaries, got: %q", out.Checksums)
+	}
+	if !strings.Contains(out.Checksums, "  install.ps1") {
+		t.Errorf("expected install.ps1 checksum entry even with missing binaries, got: %q", out.Checksums)
 	}
 }
 
@@ -335,23 +406,72 @@ func TestGenerate_HeaderPresent(t *testing.T) {
 }
 
 func TestGenerate_CosignIdentityBakedIn(t *testing.T) {
-	cfg, _ := minimalCfg(t)
+	cfg, _ := minimalCfg(t) // GithubRepo: owner/mycli, Version: v1.2.3
 	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// The identity is anchored (^...$) with the literal dots escaped, so it
-	// matches only this repository's workflow identities. A bash double-quoted
-	// string requires the backslashes doubled in the rendered install.sh; the
-	// PowerShell single-quoted string keeps them single.
-	shIdentity := `^https://github\\.com/owner/mycli/\\.github/workflows/.+$`
-	if !strings.Contains(out.InstallSh, shIdentity) {
-		t.Errorf("install.sh should contain anchored cosign identity %q", shIdentity)
+	// The identity is computed once in Go and interpolated unchanged into
+	// both templates: a single backslash from regexp.QuoteMeta survives
+	// correctly in both bash's double-quoted strings and PowerShell's
+	// single-quoted strings, so the same literal is expected in both files.
+	// Anchored (^...$), repo/version dots escaped, and bound to a workflow
+	// run triggered by pushing this exact version tag.
+	identity := `^https://github\.com/owner/mycli/\.github/workflows/.+@refs/tags/v1\.2\.3$`
+	if !strings.Contains(out.InstallSh, identity) {
+		t.Errorf("install.sh should contain anchored cosign identity %q", identity)
 	}
-	ps1Identity := `^https://github\.com/owner/mycli/\.github/workflows/.+$`
-	if !strings.Contains(out.InstallPs1, ps1Identity) {
-		t.Errorf("install.ps1 should contain anchored cosign identity %q", ps1Identity)
+	if !strings.Contains(out.InstallPs1, identity) {
+		t.Errorf("install.ps1 should contain anchored cosign identity %q", identity)
+	}
+}
+
+func TestGenerate_CosignIdentityEscapesDotsInRepo(t *testing.T) {
+	dir := t.TempDir()
+	binPath := filepath.Join(dir, "bin")
+	if err := os.WriteFile(binPath, []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &gpipe.Config{
+		GithubRepo:  "owner/my.tool",
+		Version:     "v1.0.0",
+		Binary:      "mycli",
+		InstallName: "mycli",
+		Platforms: map[string]gpipe.PlatformEntry{
+			"linux_amd64": {Path: binPath, Name: "mycli-linux-x86_64"},
+		},
+	}
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The dot in "my.tool" must be regex-escaped (\.); an unescaped dot would
+	// make the pattern also match confusable names like "my-tool"/"myXtool".
+	escaped := `owner/my\.tool`
+	if !strings.Contains(out.InstallSh, escaped) {
+		t.Errorf("install.sh cosign identity should escape the dot in repo name, want substring %q in:\n%s", escaped, out.InstallSh)
+	}
+	if !strings.Contains(out.InstallPs1, escaped) {
+		t.Errorf("install.ps1 cosign identity should escape the dot in repo name, want substring %q", escaped)
+	}
+}
+
+func TestGenerate_CosignIdentityBindsVersionTagRef(t *testing.T) {
+	cfg, _ := minimalCfg(t) // Version: v1.2.3
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	wantSuffix := `@refs/tags/v1\.2\.3$`
+	if !strings.Contains(out.InstallSh, wantSuffix) {
+		t.Errorf("install.sh cosign identity should be bound to the release tag ref, want substring %q", wantSuffix)
+	}
+	if !strings.Contains(out.InstallPs1, wantSuffix) {
+		t.Errorf("install.ps1 cosign identity should be bound to the release tag ref, want substring %q", wantSuffix)
 	}
 }
 

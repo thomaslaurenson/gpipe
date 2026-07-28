@@ -148,6 +148,63 @@ setup() {
   [[ "${output}" =~ "Unsupported platform" ]]
 }
 
+@test "resolve_asset: windows_amd64 is rejected (excluded from install.sh's platform list)" {
+  # windows_amd64 is a globally valid platform identifier, but install.sh's
+  # case statement is built from ShPlatforms (non-windows only), so it must
+  # be rejected here even though it is not "unknown" in the way freebsd_amd64
+  # above is. Regression test for the per-OS platform-list split.
+  run resolve_asset "windows_amd64"
+  (( status != 0 ))
+  [[ "${output}" =~ "Unsupported platform" ]]
+}
+
+# setup_downloader / _download
+#
+# These invoke the real curl/wget binaries directly, using
+# setup_downloader's exact flag lines, rather than going through
+# setup_downloader/_download themselves or mocking. A mock cannot catch an
+# invalid flag combination the way invoking the real binary can - which is
+# exactly what happened here once: wget's -nv is its own two-character
+# short option and cannot be bundled with -O the way -q (a genuine single
+# character) could, and no test invoked real wget to catch it.
+# "PATH=/usr/bin:/bin command -v" bypasses the mock curl that setup() puts
+# ahead of PATH for every other test in this file.
+
+@test "setup_downloader: curl branch's flags are valid for the real curl binary" {
+  local real_curl
+  if ! real_curl="$(PATH="/usr/bin:/bin" command -v curl)"; then
+    skip "curl not installed"
+  fi
+
+  local src="${BATS_TEST_TMPDIR}/curl_src"
+  printf 'hello from curl test\n' > "${src}"
+  local dest="${BATS_TEST_TMPDIR}/curl_dest"
+
+  run "${real_curl}" -fsSL --retry 3 --connect-timeout 30 --speed-limit 1024 --speed-time 30 \
+    "file://${src}" -o "${dest}"
+  (( status == 0 ))
+  grep -qF "hello from curl test" "${dest}"
+}
+
+@test "setup_downloader: wget branch's flags are valid for the real wget binary" {
+  local real_wget
+  if ! real_wget="$(PATH="/usr/bin:/bin" command -v wget)"; then
+    skip "wget not installed"
+  fi
+
+  # wget (unlike curl) has no file:// support, so this cannot be a real
+  # end-to-end download the way the curl test above is. Instead it targets
+  # a loopback port that refuses the connection immediately (no network
+  # access and no timeout wait) and asserts the failure is a genuine
+  # connection failure, not wget rejecting its own flags before ever
+  # attempting to connect - which is exactly the bug this test exists to
+  # catch.
+  local dest="${BATS_TEST_TMPDIR}/wget_dest"
+  run "${real_wget}" --tries=3 --connect-timeout=30 --timeout=30 -nv -O "${dest}" "http://127.0.0.1:1/nope"
+  (( status != 0 ))
+  [[ ! "${output}" =~ "illegal option" ]]
+}
+
 # verify_checksum
 
 @test "verify_checksum: passes when hash matches" {
@@ -241,17 +298,35 @@ setup() {
 
 @test "manage_path: skips RC modification for system install" {
   USER_INSTALL=false
-  INSTALL_DIR="/usr/local/bin"
   # INSTALL_NAME is readonly after sourcing; it is already set to "mytool"
   touch "${HOME}/.bashrc"
-  # Put a fake binary named after INSTALL_NAME on PATH so the availability
-  # check inside manage_path does not fire a warning
+  # Put a fake binary named after INSTALL_NAME at exactly INSTALL_DIR so the
+  # availability check inside manage_path resolves to it, not just something
+  # of the same name (see the shadowing test below for that case).
   local tmp_bin="${BATS_TEST_TMPDIR}/sysbin"
   mkdir -p "${tmp_bin}"
   cp "${FIXTURE_DIR}/fake_binary" "${tmp_bin}/${INSTALL_NAME}"
+  INSTALL_DIR="${tmp_bin}"
   export PATH="${tmp_bin}:${PATH}"
   manage_path
   [[ ! -s "${HOME}/.bashrc" ]]
+}
+
+@test "manage_path: warns when a different binary shadows INSTALL_DIR on PATH" {
+  USER_INSTALL=false
+  INSTALL_DIR="${BATS_TEST_TMPDIR}/realinstalldir"
+  mkdir -p "${INSTALL_DIR}"
+  cp "${FIXTURE_DIR}/fake_binary" "${INSTALL_DIR}/${INSTALL_NAME}"
+
+  # A different directory earlier in PATH shadows INSTALL_DIR
+  local shadow_bin="${BATS_TEST_TMPDIR}/shadowbin"
+  mkdir -p "${shadow_bin}"
+  cp "${FIXTURE_DIR}/fake_binary" "${shadow_bin}/${INSTALL_NAME}"
+  export PATH="${shadow_bin}:${PATH}:${INSTALL_DIR}"
+
+  run manage_path
+  (( status == 0 ))
+  [[ "${output}" =~ "resolves to" ]]
 }
 
 @test "manage_path: appends fish_add_path to config.fish for fish shell" {
@@ -263,6 +338,81 @@ setup() {
   export PATH="${PATH//${INSTALL_DIR}/}"
   manage_path
   grep -qF "fish_add_path" "${HOME}/.config/fish/config.fish"
+}
+
+@test "manage_path: zsh writes to only one of .zshrc/.zprofile when both exist" {
+  USER_INSTALL=true
+  INSTALL_DIR="${HOME}/.local/bin"
+  export SHELL="/bin/zsh"
+  touch "${HOME}/.zshrc" "${HOME}/.zprofile"
+  export PATH="${PATH//${INSTALL_DIR}/}"
+  manage_path
+  local hits=0
+  grep -qF "${INSTALL_DIR}" "${HOME}/.zshrc"    && hits=$((hits + 1))
+  grep -qF "${INSTALL_DIR}" "${HOME}/.zprofile" && hits=$((hits + 1))
+  (( hits == 1 ))
+}
+
+# install_bash_completions / install_zsh_completions
+#
+# INSTALL_NAME and BINARY are readonly after sourcing (both "mytool" in the
+# fixture), so INSTALL_DIR is pointed at a scratch dir containing a mock
+# binary named "mytool" that answers `completion <shell>`.
+
+@test "install_bash_completions: user install writes to XDG completions dir" {
+  USER_INSTALL=true
+  INSTALL_DIR="${BATS_TEST_TMPDIR}/installdir"
+  mkdir -p "${INSTALL_DIR}"
+  cp "${REPO_ROOT}/test/helpers/mock_completion_binary" "${INSTALL_DIR}/${INSTALL_NAME}"
+  unset XDG_DATA_HOME
+  run install_bash_completions
+  (( status == 0 ))
+  [[ -f "${HOME}/.local/share/bash-completion/completions/${BINARY}" ]]
+  [[ ! -e "${HOME}/.bash_completion.d/${BINARY}" ]]
+}
+
+@test "install_bash_completions: respects XDG_DATA_HOME when set" {
+  USER_INSTALL=true
+  INSTALL_DIR="${BATS_TEST_TMPDIR}/installdir"
+  mkdir -p "${INSTALL_DIR}"
+  cp "${REPO_ROOT}/test/helpers/mock_completion_binary" "${INSTALL_DIR}/${INSTALL_NAME}"
+  export XDG_DATA_HOME="${BATS_TEST_TMPDIR}/xdgdata"
+  run install_bash_completions
+  (( status == 0 ))
+  [[ -f "${XDG_DATA_HOME}/bash-completion/completions/${BINARY}" ]]
+}
+
+@test "install_bash_completions: warns and returns 0 when binary lacks completion support" {
+  USER_INSTALL=true
+  INSTALL_DIR="${BATS_TEST_TMPDIR}/installdir"
+  mkdir -p "${INSTALL_DIR}"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "${INSTALL_DIR}/${INSTALL_NAME}"
+  chmod +x "${INSTALL_DIR}/${INSTALL_NAME}"
+  run install_bash_completions
+  (( status == 0 ))
+  [[ "${output}" =~ "not available" ]]
+}
+
+@test "install_zsh_completions: user install writes to ~/.zfunc and wires fpath" {
+  USER_INSTALL=true
+  INSTALL_DIR="${BATS_TEST_TMPDIR}/installdir"
+  mkdir -p "${INSTALL_DIR}"
+  cp "${REPO_ROOT}/test/helpers/mock_completion_binary" "${INSTALL_DIR}/${INSTALL_NAME}"
+  run install_zsh_completions
+  (( status == 0 ))
+  [[ -f "${HOME}/.zfunc/_${BINARY}" ]]
+  grep -qF '.zfunc' "${HOME}/.zshrc"
+  grep -qF 'compinit' "${HOME}/.zshrc"
+}
+
+@test "install_zsh_completions: does not duplicate fpath wiring when already present" {
+  USER_INSTALL=true
+  INSTALL_DIR="${BATS_TEST_TMPDIR}/installdir"
+  mkdir -p "${INSTALL_DIR}"
+  cp "${REPO_ROOT}/test/helpers/mock_completion_binary" "${INSTALL_DIR}/${INSTALL_NAME}"
+  printf 'fpath+=(~/.zfunc)\n' > "${HOME}/.zshrc"
+  install_zsh_completions
+  (( $(grep -cF '.zfunc' "${HOME}/.zshrc") == 1 ))
 }
 
 # install_rendered.sh: hook and completion injection

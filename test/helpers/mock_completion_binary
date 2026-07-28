@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+# Mock installed binary used to test install_*_completions functions.
+#
+# Responds to `completion <shell>` the way a real gpipe-installed binary
+# would (per the README's documented completion contract), printing a
+# fixed, recognisable completion script body to stdout.
+#
+# Arguments:
+#   $1 - subcommand, expected to be "completion"
+#   $2 - shell name, e.g. bash, zsh, fish
+# Returns:
+#   0 and prints a completion script when $1 is "completion"
+#   1 with no output otherwise, simulating a binary without completion support
+
+if [[ "${1:-}" == "completion" ]]; then
+  printf '# mock completion script for %s\n' "${2:-unknown}"
+  exit 0
+fi
+
+exit 1

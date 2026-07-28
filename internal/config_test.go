@@ -109,6 +109,57 @@ func TestLoadConfig_MalformedYAML(t *testing.T) {
 	}
 }
 
+func TestLoadConfig_UnknownFieldRejected(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".gpipe.yml")
+	// install_name (underscore) is a typo for install-name (hyphen): this
+	// must be a load error, not silently ignored.
+	content := `
+binary: mycli
+install_name: cli
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := gpipe.LoadConfig(path)
+	if err == nil {
+		t.Fatal("expected error for unknown field install_name, got nil")
+	}
+}
+
+func TestLoadConfig_EmptyFileNoError(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".gpipe.yml")
+	if err := os.WriteFile(path, []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := gpipe.LoadConfig(path)
+	if err != nil {
+		t.Fatalf("expected nil error for empty file, got: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected non-nil config for empty file")
+	}
+}
+
+func TestLoadConfig_CommentOnlyFileNoError(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".gpipe.yml")
+	if err := os.WriteFile(path, []byte("# just a comment\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := gpipe.LoadConfig(path)
+	if err != nil {
+		t.Fatalf("expected nil error for comment-only file, got: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected non-nil config for comment-only file")
+	}
+}
+
 func TestMergeFlags_OverridesApplied(t *testing.T) {
 	t.Parallel()
 	signTrue := true
@@ -248,6 +299,36 @@ func TestValidate_ValidVersionFormats(t *testing.T) {
 			for _, e := range errs {
 				if e.Error() == "invalid version" {
 					t.Errorf("version %q should be valid but got error: %v", tc.version, e)
+				}
+			}
+		})
+	}
+}
+
+// Prerelease tags (e.g. release candidates) are legitimate GitHub release
+// versions, and DetectVersion's own -dev suffix must not be rejected by the
+// exact validation mode (ModeNormal) that generate uses for a real release.
+func TestValidate_NormalModeAcceptsPrereleaseAndDevSuffix(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		version string
+	}{
+		{name: "release candidate", version: "v1.2.3-rc.1"},
+		{name: "beta", version: "v2.0.0-beta1"},
+		{name: "dev suffix from DetectVersion", version: "v1.2.3-dev"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := minimalValidConfig()
+			cfg.Version = tc.version
+			errs := gpipe.Validate(cfg, gpipe.ModeNormal)
+			for _, e := range errs {
+				if contains(e.Error(), "invalid version") {
+					t.Errorf("version %q should be valid in normal mode but got error: %v", tc.version, e)
 				}
 			}
 		})
@@ -420,6 +501,53 @@ func TestParseGitRemote_Invalid(t *testing.T) {
 	got := gpipe.ParseGitRemote("not-a-remote")
 	if got != "" {
 		t.Errorf("expected empty string for invalid remote, got %q", got)
+	}
+}
+
+func TestParseGitRemote_SSHURL(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		remote   string
+		expected string
+	}{
+		{name: "with .git suffix", remote: "ssh://git@github.com/owner/repo.git", expected: "owner/repo"},
+		{name: "without .git suffix", remote: "ssh://git@github.com/owner/repo", expected: "owner/repo"},
+		{name: "with explicit port", remote: "ssh://git@github.com:22/owner/repo.git", expected: "owner/repo"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := gpipe.ParseGitRemote(tc.remote)
+			if got != tc.expected {
+				t.Errorf("ParseGitRemote(%q) = %q, want %q", tc.remote, got, tc.expected)
+			}
+		})
+	}
+}
+
+// A remote that parses cleanly but points at a non-github.com host must be
+// rejected, not silently resolved to a plausible-looking wrong repo: gpipe's
+// generated scripts always download from https://github.com/...
+func TestParseGitRemote_RejectsNonGithubHost(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		remote string
+	}{
+		{name: "https gitlab", remote: "https://gitlab.com/owner/repo.git"},
+		{name: "https bitbucket", remote: "https://bitbucket.org/owner/repo"},
+		{name: "scp-like gitlab", remote: "git@gitlab.com:owner/repo.git"},
+		{name: "ssh URL enterprise host", remote: "ssh://git@my-github-enterprise.internal/owner/repo.git"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := gpipe.ParseGitRemote(tc.remote)
+			if got != "" {
+				t.Errorf("ParseGitRemote(%q) = %q, want empty string (non-github host)", tc.remote, got)
+			}
+		})
 	}
 }
 

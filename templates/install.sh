@@ -133,12 +133,12 @@ detect_platform() {
 resolve_asset() {
   local platform="$1"
   case "$platform" in
-{{- range .Platforms}}
+{{- range .ShPlatforms}}
     {{.ID}}) printf '%s' "{{.AssetName}}" ;;
 {{- end}}
     *)
       local supported
-      supported="$(printf '%s ' '{{range .Platforms}}{{.ID}} {{end}}')"
+      supported="$(printf '%s ' '{{range .ShPlatforms}}{{.ID}} {{end}}')"
       error "Unsupported platform: ${platform}. Supported: ${supported}"
       ;;
   esac
@@ -155,11 +155,17 @@ resolve_asset() {
 setup_downloader() {
   if command -v curl > /dev/null 2>&1; then
     _download() {
-      curl -fsSL --connect-timeout 30 --speed-limit 1024 --speed-time 30 "$1" -o "$2"
+      curl -fsSL --retry 3 --connect-timeout 30 --speed-limit 1024 --speed-time 30 "$1" -o "$2"
     }
   elif command -v wget > /dev/null 2>&1; then
     _download() {
-      wget --connect-timeout=30 --timeout=30 -qO "$2" "$1"
+      # -nv (not -q): keeps wget's own error output on failure (e.g. 404,
+      # connection refused) so a failed download is not completely silent
+      # when set -e stops the script. -nv is wget's own two-character short
+      # option, not a bundle of single-char flags, so it cannot be bundled
+      # with -O the way -qO could: that combination is rejected by wget as
+      # an illegal option.
+      wget --tries=3 --connect-timeout=30 --timeout=30 -nv -O "$2" "$1"
     }
   else
     error "curl or wget is required to download files"
@@ -195,14 +201,14 @@ download_assets() {
 # Verify the cosign signature on checksums.txt.
 #
 # Skips verification when NO_VERIFY is true. Exits with an error if cosign
-# is not found and NO_VERIFY is false.
+# is not found and NO_VERIFY is false. The certificate identity regexp
+# (bound to this repo and this version's tag ref) is baked in as a literal
+# at generation time; see cosignCertIdentity in generator.go.
 #
 # Arguments:
 #   $1 - directory containing checksums.txt and checksums.txt.sigstore.json
 # Environment:
-#   NO_VERIFY   - skip when true
-#   GITHUB_REPO - used to build the certificate identity regexp
-#   VERSION     - used in the skip warning message
+#   NO_VERIFY - skip when true
 # Returns:
 #   0 on success or when skipped
 #   exits 1 if cosign is missing or verification fails
@@ -211,6 +217,9 @@ verify_signature() {
 
   if [[ "${NO_VERIFY}" == "true" ]]; then
     warn "Skipping cosign signature verification (--no-verify passed)"
+    warn "The checksum check that still runs only detects accidental"
+    warn "corruption: checksums.txt comes from the same origin as the"
+    warn "binary, so it offers no protection against a tampered release."
     return 0
   fi
 
@@ -228,11 +237,11 @@ verify_signature() {
 
   info "Verifying cosign signature on checksums.txt..."
   local cert_identity
-  # Anchored (^...$) and with the literal dots escaped so the pattern matches
-  # only the exact repository's workflow identities. The trailing .+ still
-  # allows any workflow file and git ref within this repo, which is required
-  # since the release workflow name is not known at generation time.
-  cert_identity="^https://github\\.com/{{.GithubRepo}}/\\.github/workflows/.+$"
+  # Anchored (^...$) to this repository and to a workflow run triggered by
+  # pushing this exact version tag (see cosignCertIdentity in generator.go
+  # for the full rationale). The workflow filename segment is left open
+  # (.+) since it is not known at generation time.
+  cert_identity="{{.CosignCertIdentity}}"
   cosign verify-blob \
     --bundle "${dir}/checksums.txt.sigstore.json" \
     --certificate-identity-regexp="${cert_identity}" \
@@ -331,18 +340,24 @@ install_binary() {
     INSTALL_DIR="${user_dir}"
   else
     local sys_dir="/usr/local/bin"
-    if _try_install "${src}" "${sys_dir}" "${INSTALL_NAME}" 2>/dev/null; then
+    local try_err
+    if try_err="$(_try_install "${src}" "${sys_dir}" "${INSTALL_NAME}" 2>&1)"; then
       INSTALL_DIR="${sys_dir}"
     else
       if [[ -t 2 ]]; then
-        printf "\n${_YELLOW}Insufficient permissions to install to %s.${_NC}\n\n" "${sys_dir}" >&2
-        printf "  1) Retry with sudo\n" >&2
+        printf "\n${_YELLOW}Insufficient permissions to install to %s.${_NC}\n" "${sys_dir}" >&2
+        [[ -n "${try_err}" ]] && printf "%s\n" "${try_err}" >&2
+        printf "\n  1) Retry with sudo\n" >&2
         printf "  2) Install to ~/.local/bin (no sudo required)\n" >&2
         printf "  3) Quit\n\n" >&2
         read -rp "Choose [1/2/3]: " _choice </dev/tty
         case "${_choice}" in
           1)
             info "Retrying with sudo..."
+            # sys_dir may not exist yet (e.g. a fresh macOS install): install(1)
+            # does not create its destination directory, so it must exist first.
+            sudo mkdir -p "${sys_dir}" \
+              || error "sudo mkdir failed for ${sys_dir}"
             sudo install -m 0755 "${src}" "${sys_dir}/${INSTALL_NAME}" \
               || error "sudo install failed"
             INSTALL_DIR="${sys_dir}"
@@ -394,23 +409,54 @@ install_bash_completions() {
     return 0
   fi
 
+  # ~/.local/share/bash-completion/completions/ is the XDG path bash-completion
+  # v2 scans automatically; unlike ~/.bash_completion.d it requires no rc-file
+  # wiring to take effect.
+  local user_completion_dir="${XDG_DATA_HOME:-${HOME}/.local/share}/bash-completion/completions"
+
   if [[ "${USER_INSTALL}" == "true" ]]; then
-    mkdir -p "${HOME}/.bash_completion.d"
-    printf '%s\n' "${completion}" > "${HOME}/.bash_completion.d/${BINARY}"
-    step "Bash completions -> ~/.bash_completion.d/${BINARY}"
+    mkdir -p "${user_completion_dir}"
+    printf '%s\n' "${completion}" > "${user_completion_dir}/${BINARY}"
+    step "Bash completions -> ${user_completion_dir}/${BINARY}"
   elif printf '%s\n' "${completion}" \
-      | sudo install -m 0644 /dev/stdin \
+      | sudo -n install -m 0644 /dev/stdin \
           "/etc/bash_completion.d/${BINARY}" 2>/dev/null; then
     step "Bash completions -> /etc/bash_completion.d/${BINARY}"
   else
-    mkdir -p "${HOME}/.bash_completion.d"
-    printf '%s\n' "${completion}" > "${HOME}/.bash_completion.d/${BINARY}"
-    step "Bash completions -> ~/.bash_completion.d/${BINARY}"
+    mkdir -p "${user_completion_dir}"
+    printf '%s\n' "${completion}" > "${user_completion_dir}/${BINARY}"
+    step "Bash completions -> ${user_completion_dir}/${BINARY}"
   fi
 }
 {{- end}}
 {{- if .Completions.Zsh}}
 # gpipe test: zsh-completions
+
+# Ensure ~/.zfunc is on fpath and completions are reloaded on next shell
+# start. Zsh only discovers completion functions via fpath at compinit time,
+# so dropping a file in ~/.zfunc does nothing until fpath includes it and
+# compinit has (re)run. Idempotent: skips if .zshrc already references
+# .zfunc. Appends a fresh compinit call rather than editing any existing
+# one, since ours runs last and re-scans with the updated fpath regardless
+# of what ran earlier in the file.
+#
+# Environment:
+#   HOME, ZDOTDIR, INSTALL_NAME - read
+# Returns:
+#   0 always
+_ensure_zsh_fpath() {
+  local zshrc="${ZDOTDIR:-$HOME}/.zshrc"
+  [[ -f "${zshrc}" ]] || touch "${zshrc}"
+  if grep -qF '.zfunc' "${zshrc}" 2>/dev/null; then
+    return 0
+  fi
+  {
+    printf '\n# Added by %s installer\n' "${INSTALL_NAME}"
+    printf 'fpath+=(%s/.zfunc)\n' "${HOME}"
+    printf 'autoload -Uz compinit && compinit\n'
+  } >> "${zshrc}"
+  warn "Added ~/.zfunc to fpath in ${zshrc}. Restart your shell to load completions."
+}
 
 # Install zsh completions generated by the installed binary.
 #
@@ -432,14 +478,16 @@ install_zsh_completions() {
     mkdir -p "${HOME}/.zfunc"
     printf '%s\n' "${completion}" > "${HOME}/.zfunc/_${BINARY}"
     step "Zsh completions -> ~/.zfunc/_${BINARY}"
+    _ensure_zsh_fpath
   elif printf '%s\n' "${completion}" \
-      | sudo install -m 0644 /dev/stdin \
+      | sudo -n install -m 0644 /dev/stdin \
           "/usr/share/zsh/site-functions/_${BINARY}" 2>/dev/null; then
     step "Zsh completions -> /usr/share/zsh/site-functions/_${BINARY}"
   else
     mkdir -p "${HOME}/.zfunc"
     printf '%s\n' "${completion}" > "${HOME}/.zfunc/_${BINARY}"
     step "Zsh completions -> ~/.zfunc/_${BINARY}"
+    _ensure_zsh_fpath
   fi
 }
 {{- end}}
@@ -467,7 +515,7 @@ install_fish_completions() {
     printf '%s\n' "${completion}" > "${HOME}/.config/fish/completions/${BINARY}.fish"
     step "Fish completions -> ~/.config/fish/completions/${BINARY}.fish"
   elif printf '%s\n' "${completion}" \
-      | sudo install -m 0644 /dev/stdin \
+      | sudo -n install -m 0644 /dev/stdin \
           "/usr/share/fish/completions/${BINARY}.fish" 2>/dev/null; then
     step "Fish completions -> /usr/share/fish/completions/${BINARY}.fish"
   else
@@ -492,9 +540,16 @@ install_fish_completions() {
 #   0 always
 manage_path() {
   if [[ "${USER_INSTALL}" != "true" ]]; then
-    if ! command -v "${INSTALL_NAME}" > /dev/null 2>&1; then
+    local resolved
+    resolved="$(command -v "${INSTALL_NAME}" 2>/dev/null || true)"
+    if [[ -z "${resolved}" ]]; then
       warn "${INSTALL_NAME} is not reachable via PATH"
       warn "  ${INSTALL_DIR} may need to be added to PATH manually"
+    elif [[ "${resolved}" != "${INSTALL_DIR}/${INSTALL_NAME}" ]]; then
+      # A different binary of the same name earlier in PATH shadows the one
+      # just installed, so `command -v` succeeding is not sufficient.
+      warn "${INSTALL_NAME} on PATH resolves to ${resolved}, not ${INSTALL_DIR}/${INSTALL_NAME}"
+      warn "  ${INSTALL_DIR} may need to come earlier in PATH"
     fi
     return 0
   fi
@@ -512,6 +567,7 @@ manage_path() {
         if [[ -f "${_f}" ]] && ! grep -qF "${INSTALL_DIR}" "${_f}" 2>/dev/null; then
           printf '\n# Added by %s installer\n%s\n' "${INSTALL_NAME}" "${export_line}" >> "${_f}"
           modified+=("${_f}")
+          break
         fi
       done ;;
     */fish)
