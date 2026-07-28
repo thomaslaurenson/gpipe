@@ -291,18 +291,25 @@ cosign not found in PATH.
     # the result in gpipe's own format; on failure the captured text is
     # replayed under the [ERROR] label, where it is the useful diagnostic.
     # 2>&1 merges stderr into the pipeline as ErrorRecord objects, so each is
-    # cast to a string before being handed to the output helpers. The child
-    # scope drops ErrorActionPreference back to Continue for the duration of
-    # the call: under 'Stop', some PowerShell versions treat a native
-    # command's stderr as a terminating error, which would abort the install
-    # on cosign's ordinary progress chatter rather than on a real failure.
-    $cosignOut = & {
-        $ErrorActionPreference = 'Continue'
-        Invoke-Cosign verify-blob `
+    # cast to a string before being handed to the output helpers.
+    #
+    # ErrorActionPreference drops to Continue for the duration of the call:
+    # under 'Stop', some PowerShell versions treat a native command's stderr
+    # as a terminating error, which would abort the install on cosign's
+    # ordinary progress chatter rather than on a real failure. Restored in a
+    # finally rather than scoped by wrapping the call in a child scriptblock,
+    # because PSScriptAnalyzer's PSReviewUnusedParameter does not count
+    # parameter usage inside a nested scriptblock and reports $TmpDir unused.
+    $prevErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $cosignOut = Invoke-Cosign verify-blob `
             --bundle "$TmpDir\checksums.txt.sigstore.json" `
             --certificate-identity-regexp='{{.CosignCertIdentity}}' `
             --certificate-oidc-issuer='https://token.actions.githubusercontent.com' `
             "$TmpDir\checksums.txt" 2>&1
+    } finally {
+        $ErrorActionPreference = $prevErrorAction
     }
     if ($LASTEXITCODE -ne 0) {
         # Where-Object first: piping a $null $cosignOut still sends one item
