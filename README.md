@@ -4,7 +4,7 @@
 
 ![Release Version](https://img.shields.io/github/v/release/thomaslaurenson/gpipe?style=flat&logo=github) ![Release downloads](https://img.shields.io/github/downloads/thomaslaurenson/gpipe/total?label=downloads&logo=github)
 
-![Go Version](https://img.shields.io/github/go-mod/go-version/thomaslaurenson/gpipe?logo=go) ![Code Coverage](https://img.shields.io/badge/Coverage-60%25-blue?logo=go)
+![Go Version](https://img.shields.io/github/go-mod/go-version/thomaslaurenson/gpipe?logo=go) ![Code Coverage](https://img.shields.io/badge/Coverage-73.0%25-blue?logo=go)
 
 Automated, cross-platform, language-agnostic installer script generation for GitHub binary releases.
 
@@ -204,14 +204,36 @@ Hooks are shell snippets injected verbatim into the generated install scripts. P
 
 **Important notes for hook authors:**
 - Bash hooks are validated with `bash -n` before generation
+- PowerShell hooks are validated with the PowerShell language parser before generation, when `pwsh` is available on the machine running `gpipe generate`; otherwise the check is skipped with a warning
 - Bash hooks run in a subshell — `set -euo pipefail` is inherited. Any non-zero exit aborts the install
 - PowerShell hooks run inside `& { }` — `$ErrorActionPreference = "Stop"` is active. Any terminating error aborts the install
-- Pre-install hooks run before the temp directory is created — do not assume a temp dir is available
+- A temp directory already exists by the time pre-install hooks run, in both install.sh and install.ps1
 - Hooks are wrapped in delimited comment blocks in the generated output for easy identification
 
 ## Shell Completions
 
 Enable per-shell completions in `.gpipe.yml`. The generated script runs `{binary} completion {shell}` after install and writes the output to the appropriate location. If the binary does not support the completion subcommand the install continues with a warning.
+
+## Verifying install.sh / install.ps1
+
+`checksums.txt` includes SHA-256 entries for `install.sh` and `install.ps1` themselves, not just the platform binaries. This lets a cautious user verify the installer script before running it, instead of piping straight to a shell:
+
+```bash
+curl -fsSLO https://github.com/<owner>/<repo>/releases/download/<version>/install.sh
+curl -fsSLO https://github.com/<owner>/<repo>/releases/download/<version>/checksums.txt
+curl -fsSLO https://github.com/<owner>/<repo>/releases/download/<version>/checksums.txt.sigstore.json
+
+cosign verify-blob \
+  --bundle checksums.txt.sigstore.json \
+  --certificate-identity-regexp='^https://github\.com/<owner>/<repo>/\.github/workflows/.+@refs/tags/<version>$' \
+  --certificate-oidc-issuer='https://token.actions.githubusercontent.com' \
+  checksums.txt
+
+sha256sum -c <(grep install.sh checksums.txt)
+
+# inspect install.sh, then run it
+bash install.sh
+```
 
 ## Local Testing
 
@@ -225,6 +247,12 @@ gpipe generate --dry-run
 # Verify goreleaser output structure before pushing a tag
 goreleaser build --snapshot --clean
 ls dist/
+```
+
+The bash test suite (`make test_bash`) uses [bats-core](https://github.com/bats-core/bats-core) via a git submodule. On a fresh clone, initialise it first:
+
+```bash
+git submodule update --init --recursive
 ```
 
 If `--repo` and `--version` are not supplied, they are auto-detected from the local git state:

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"text/template"
 )
@@ -26,8 +27,45 @@ type templateData struct {
 	Binary      string
 	InstallName string
 	Completions Completions
-	Platforms   []platformEntry
-	Hooks       hookContent
+	// ShPlatforms and Ps1Platforms are disjoint subsets of the configured
+	// platforms, split by OS so install.sh never carries an unreachable
+	// windows_* case arm (and vice versa for install.ps1).
+	ShPlatforms  []platformEntry
+	Ps1Platforms []platformEntry
+	Hooks        hookContent
+	// CosignCertIdentity is the fully-assembled --certificate-identity-regexp
+	// value, computed once here rather than in the templates. A single
+	// backslash from regexp.QuoteMeta survives unchanged whether it lands in
+	// install.sh's double-quoted cert_identity="..." or install.ps1's
+	// single-quoted -certificate-identity-regexp='...', so the identical
+	// string can be dropped into both without any shell-specific re-escaping.
+	CosignCertIdentity string
+}
+
+// cosignCertIdentity builds the --certificate-identity-regexp value the
+// generated installers pass to `cosign verify-blob`.
+//
+// The pattern is anchored (^...$) to this exact repository and requires the
+// signing workflow run to have been triggered by pushing this exact version
+// tag (@refs/tags/VERSION). That closes two gaps a looser pattern leaves
+// open: a signature from a different repository whose name differs from
+// this one only by a regex metacharacter (e.g. "my.tool" vs "myXtool")
+// cannot verify, and a checksums.txt signed for a different release cannot
+// be replayed against this version (anti-rollback). The workflow filename
+// segment is left open (.+) because it is not knowable at generation time
+// for arbitrary consumers of gpipe.
+//
+// GithubRepo and Version are both constrained by Validate (repoPattern /
+// semverPattern) before Generate ever runs, so QuoteMeta only ever has
+// literal dots to escape in practice here. It is applied unconditionally
+// rather than relying on that invariant, since regex-injection safety
+// should not depend on a caller having already validated its input.
+func cosignCertIdentity(githubRepo, version string) string {
+	return fmt.Sprintf(
+		`^https://github\.com/%s/\.github/workflows/.+@refs/tags/%s$`,
+		regexp.QuoteMeta(githubRepo),
+		regexp.QuoteMeta(version),
+	)
 }
 
 // platformEntry holds a single platform's ID and resolved asset filename
@@ -58,11 +96,6 @@ func Generate(cfg *Config, tplFS fs.FS, mode ValidationMode) (*Output, error) {
 		return nil, fmt.Errorf("reading install.ps1 template: %w", err)
 	}
 
-	checksums, err := buildChecksums(cfg, mode)
-	if err != nil {
-		return nil, err
-	}
-
 	preShHook, err := loadHook(cfg.Hooks.PreSh, "bash")
 	if err != nil {
 		return nil, fmt.Errorf("pre-sh hook: %w", err)
@@ -80,25 +113,29 @@ func Generate(cfg *Config, tplFS fs.FS, mode ValidationMode) (*Output, error) {
 		return nil, fmt.Errorf("post-ps1 hook: %w", err)
 	}
 
-	var platforms []platformEntry
+	var shPlatforms, ps1Platforms []platformEntry
 	for _, p := range ValidPlatforms {
 		entry, ok := cfg.Platforms[p]
 		if !ok {
 			continue
 		}
-		platforms = append(platforms, platformEntry{
-			ID:        p,
-			AssetName: entry.Name,
-		})
+		pe := platformEntry{ID: p, AssetName: entry.Name}
+		if strings.HasPrefix(p, "windows_") {
+			ps1Platforms = append(ps1Platforms, pe)
+		} else {
+			shPlatforms = append(shPlatforms, pe)
+		}
 	}
 
 	data := &templateData{
-		GithubRepo:  cfg.GithubRepo,
-		Version:     cfg.Version,
-		Binary:      cfg.Binary,
-		InstallName: cfg.InstallName,
-		Completions: cfg.Completions,
-		Platforms:   platforms,
+		GithubRepo:         cfg.GithubRepo,
+		Version:            cfg.Version,
+		Binary:             cfg.Binary,
+		InstallName:        cfg.InstallName,
+		Completions:        cfg.Completions,
+		ShPlatforms:        shPlatforms,
+		Ps1Platforms:       ps1Platforms,
+		CosignCertIdentity: cosignCertIdentity(cfg.GithubRepo, cfg.Version),
 		Hooks: hookContent{
 			PreSh:   preShHook,
 			PostSh:  postShHook,
@@ -115,6 +152,17 @@ func Generate(cfg *Config, tplFS fs.FS, mode ValidationMode) (*Output, error) {
 	ps1, err := render(string(ps1Tpl), data)
 	if err != nil {
 		return nil, fmt.Errorf("rendering install.ps1: %w", err)
+	}
+
+	// Computed after rendering (not alongside the platform binary hashes
+	// above) so install.sh and install.ps1 can be included in checksums.txt
+	// themselves: a user who downloads the scripts instead of piping
+	// straight to a shell can verify them the same way, by running
+	// cosign-verify on checksums.txt and then comparing a local sha256sum
+	// against the entry here, rather than trusting the scripts unverified.
+	checksums, err := buildChecksums(cfg, mode, sh, ps1)
+	if err != nil {
+		return nil, err
 	}
 
 	return &Output{
@@ -137,7 +185,10 @@ func render(tpl string, data *templateData) (string, error) {
 	return buf.String(), nil
 }
 
-func buildChecksums(cfg *Config, mode ValidationMode) (string, error) {
+// buildChecksums hashes each configured platform binary, followed by the
+// already-rendered install.sh and install.ps1 content, so both scripts can
+// be verified out-of-band the same way the binaries are.
+func buildChecksums(cfg *Config, mode ValidationMode, installSh, installPs1 string) (string, error) {
 	var sb strings.Builder
 	for _, platform := range ValidPlatforms {
 		entry, ok := cfg.Platforms[platform]
@@ -160,6 +211,8 @@ func buildChecksums(cfg *Config, mode ValidationMode) (string, error) {
 		f.Close()
 		fmt.Fprintf(&sb, "%x  %s\n", h.Sum(nil), entry.Name)
 	}
+	fmt.Fprintf(&sb, "%x  install.sh\n", sha256.Sum256([]byte(installSh)))
+	fmt.Fprintf(&sb, "%x  install.ps1\n", sha256.Sum256([]byte(installPs1)))
 	return sb.String(), nil
 }
 
@@ -176,8 +229,13 @@ func loadHook(path, shellType string) (string, error) {
 		fmt.Fprintf(os.Stderr, "warning: hook file %q is empty, skipping\n", path)
 		return "", nil
 	}
-	if shellType == "bash" {
+	switch shellType {
+	case "bash":
 		if err := validateBashSyntax(path); err != nil {
+			return "", err
+		}
+	case "ps1":
+		if err := validatePs1Syntax(path); err != nil {
 			return "", err
 		}
 	}
@@ -193,6 +251,40 @@ func validateBashSyntax(path string) error {
 	out, err := exec.Command(bash, "-n", path).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("bash syntax error in hook %q:\n%s", path, bytes.TrimSpace(out))
+	}
+	return nil
+}
+
+// ps1ParseCheckScript parses (but does not execute) the file named by the
+// GPIPE_HOOK_PATH environment variable using the PowerShell language parser,
+// the pwsh equivalent of `bash -n`. The path travels via an environment
+// variable rather than being interpolated into the script text so no
+// PowerShell quoting of the path is needed here at all.
+const ps1ParseCheckScript = `
+$parseErrors = $null
+[System.Management.Automation.Language.Parser]::ParseFile($env:GPIPE_HOOK_PATH, [ref]$null, [ref]$parseErrors) | Out-Null
+if ($parseErrors.Count -gt 0) {
+    $parseErrors | ForEach-Object { Write-Output $_.ToString() }
+    exit 1
+}
+exit 0
+`
+
+// validatePs1Syntax mirrors validateBashSyntax for PowerShell hooks: it
+// catches a broken .ps1 hook before it ends up in a published installer.
+// Skipped with a warning (not an error) when pwsh is unavailable, the same
+// fallback validateBashSyntax uses when bash is missing.
+func validatePs1Syntax(path string) error {
+	pwsh, err := exec.LookPath("pwsh")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: pwsh not found, skipping syntax check for %q\n", path)
+		return nil
+	}
+	cmd := exec.Command(pwsh, "-NoProfile", "-NonInteractive", "-Command", ps1ParseCheckScript)
+	cmd.Env = append(os.Environ(), "GPIPE_HOOK_PATH="+path)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("powershell syntax error in hook %q:\n%s", path, bytes.TrimSpace(out))
 	}
 	return nil
 }

@@ -165,13 +165,19 @@ Describe 'Resolve-InstallDir' {
     It 'returns the LOCALAPPDATA Programs path for a user install' {
         $env:LOCALAPPDATA = $TestDrive
         $result = Resolve-InstallDir -UserInstall $true
-        $result | Should -Be (Join-Path $TestDrive 'Programs' 'mytool')
+        $result.Path | Should -Be (Join-Path $TestDrive "Programs\mytool")
     }
 
     It 'user install path includes the install name' {
         $env:LOCALAPPDATA = $TestDrive
         $result = Resolve-InstallDir -UserInstall $true
-        $result | Should -BeLike "*$script:InstallName*"
+        $result.Path | Should -BeLike "*$script:InstallName*"
+    }
+
+    It 'user install reports IsUserInstall = true' {
+        $env:LOCALAPPDATA = $TestDrive
+        $result = Resolve-InstallDir -UserInstall $true
+        $result.IsUserInstall | Should -Be $true
     }
 }
 

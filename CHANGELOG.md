@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.2.0 - 2026-07-29
+
+### Added
+
+- Validate PowerShell hooks before generation, matching the existing bash hook check
+- Include the install scripts in checksums.txt so they can be verified before being run
+
+### Changed
+
+- Bind the cosign certificate identity to the release tag so signatures cannot be replayed
+- Reject unknown keys in .gpipe.yml and non-github.com remotes, accept prerelease versions
+- Limit each generated script to the platforms it can actually install
+- Give every line of installer output a level label, and hide cosign and download chatter unless it fails
+
+### Fixed
+
+- Fix Windows PowerShell user installs, PATH scope, duplicate .exe naming, and silent failures
+- Fix shell completion install paths and zsh fpath wiring so completions load
+- Retry failed downloads and warn when another binary shadows the install directory on PATH
+
 ## 1.1.1 - 2026-07-06
 
 ### Added

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,11 +35,14 @@ var ValidPlatforms = []string{
 	"windows_arm64",
 }
 
-// semverPattern matches v1.2.3, 1.2.3, v1.2, 1.2
-var semverPattern = regexp.MustCompile(`^v?[0-9]+\.[0-9]+(\.[0-9]+)?$`)
-
-// semverRelaxedPattern also allows placeholder values like v0.0.0-dry-run
-var semverRelaxedPattern = regexp.MustCompile(`^v?[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9._-]+)?$`)
+// semverPattern matches semantic version tags: v1.2.3, 1.2.3, v1.2, 1.2,
+// with an optional prerelease/build suffix such as v1.2.3-rc.1 or the
+// -dev suffix DetectVersion appends when HEAD is not exactly on a tag.
+// Applied uniformly across all validation modes: the suffix charset
+// ([a-zA-Z0-9._-]) contains no shell metacharacters, so accepting it does
+// not weaken the injection defence these values are validated against
+// before being interpolated into the generated install.sh / install.ps1.
+var semverPattern = regexp.MustCompile(`^v?[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9._-]+)?$`)
 
 // repoPattern matches owner/repo.
 //
@@ -104,6 +108,10 @@ type FlagValues struct {
 // LoadConfig reads and parses a .gpipe.yml file.
 //
 // Returns an empty Config (not nil) if the file does not exist.
+//
+// Decoding is strict (KnownFields): an unrecognised key such as a typo'd
+// "install_name" (underscore instead of hyphen) is a parse error rather
+// than being silently ignored.
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -114,7 +122,12 @@ func LoadConfig(path string) (*Config, error) {
 	}
 
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	// An empty (or comment/whitespace-only) file decodes as io.EOF rather
+	// than populating cfg; treat that the same as "no fields set", matching
+	// the previous yaml.Unmarshal behaviour instead of surfacing an error.
+	if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("parsing config file: %w", err)
 	}
 	return &cfg, nil
@@ -172,35 +185,63 @@ func DetectRepo() (string, error) {
 	return repo, nil
 }
 
-// parseGitRemote extracts owner/repo from HTTPS or SSH remote URLs.
+// githubHostPattern matches a git remote host that is exactly github.com
+// (case-insensitive, as DNS host comparisons conventionally are). gpipe's
+// generated scripts always download from https://github.com/..., so a
+// remote pointing at GitLab, Bitbucket, a self-hosted GitHub Enterprise
+// instance, or any other host must not silently resolve to a
+// plausible-looking but wrong owner/repo.
+var githubHostPattern = regexp.MustCompile(`(?i)^github\.com$`)
+
+// parseGitRemote extracts owner/repo from a github.com remote URL.
 //
 // Handles:
 //   - https://github.com/owner/repo.git
 //   - https://github.com/owner/repo
+//   - ssh://git@github.com/owner/repo.git
+//   - ssh://git@github.com/owner/repo
 //   - git@github.com:owner/repo.git
 //   - git@github.com:owner/repo
+//
+// Returns "" if the URL cannot be parsed, or if it parses but the host is
+// not github.com.
 func parseGitRemote(remote string) string {
-	// Strip trailing .git
 	remote = strings.TrimSuffix(remote, ".git")
 
-	// SSH format: git@github.com:owner/repo
-	if strings.Contains(remote, "@") && strings.Contains(remote, ":") {
-		parts := strings.SplitN(remote, ":", 2)
-		if len(parts) == 2 {
-			return parts[1]
-		}
-	}
-
-	// HTTPS format: https://github.com/owner/repo
+	// scheme://[user@]host[:port]/owner/repo covers both ssh:// and
+	// http(s):// remotes, which share the same scheme://host/path shape.
 	if strings.Contains(remote, "://") {
 		parts := strings.SplitN(remote, "://", 2)
-		if len(parts) == 2 {
-			// Strip host, keep path
-			path := strings.SplitN(parts[1], "/", 2)
-			if len(path) == 2 {
-				return path[1]
-			}
+		if len(parts) != 2 {
+			return ""
 		}
+		rest := parts[1]
+		if at := strings.LastIndex(rest, "@"); at != -1 {
+			rest = rest[at+1:]
+		}
+		hostAndPath := strings.SplitN(rest, "/", 2)
+		if len(hostAndPath) != 2 {
+			return ""
+		}
+		host := strings.SplitN(hostAndPath[0], ":", 2)[0] // strip a port
+		if !githubHostPattern.MatchString(host) {
+			return ""
+		}
+		return hostAndPath[1]
+	}
+
+	// SCP-like short syntax (no scheme): [user@]host:owner/repo
+	if strings.Contains(remote, "@") && strings.Contains(remote, ":") {
+		parts := strings.SplitN(remote, ":", 2)
+		if len(parts) != 2 {
+			return ""
+		}
+		userAndHost := strings.SplitN(parts[0], "@", 2)
+		host := userAndHost[len(userAndHost)-1]
+		if !githubHostPattern.MatchString(host) {
+			return ""
+		}
+		return parts[1]
 	}
 
 	return ""
@@ -232,7 +273,7 @@ func DetectVersion() (string, error) {
 	}
 
 	base := strings.TrimSpace(string(out))
-	if !semverRelaxedPattern.MatchString(base) {
+	if !semverPattern.MatchString(base) {
 		return "", fmt.Errorf("detected tag %q is not a semantic version: pass --version explicitly", base)
 	}
 
@@ -254,17 +295,8 @@ func Validate(cfg *Config, mode ValidationMode) []error {
 
 	if cfg.Version == "" {
 		errs = append(errs, errors.New("missing required field: version (pass --version or ensure git tags are set)"))
-	} else {
-		switch mode {
-		case ModeDryRun:
-			if !semverRelaxedPattern.MatchString(cfg.Version) {
-				errs = append(errs, fmt.Errorf("invalid version %q: expected semantic version like v1.2.3 or 1.2.3", cfg.Version))
-			}
-		default:
-			if !semverPattern.MatchString(cfg.Version) {
-				errs = append(errs, fmt.Errorf("invalid version %q: expected semantic version like v1.2.3 or 1.2.3", cfg.Version))
-			}
-		}
+	} else if !semverPattern.MatchString(cfg.Version) {
+		errs = append(errs, fmt.Errorf("invalid version %q: expected semantic version like v1.2.3 or 1.2.3", cfg.Version))
 	}
 
 	if cfg.Binary == "" {
