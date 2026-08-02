@@ -405,6 +405,38 @@ func TestGenerate_HeaderPresent(t *testing.T) {
 	}
 }
 
+func TestGenerate_GpipeVersionStamped(t *testing.T) {
+	cfg, _ := minimalCfg(t) // Version: v1.2.3
+	cfg.GpipeVersion = "v1.4.2"
+
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for name, script := range map[string]string{"install.sh": out.InstallSh, "install.ps1": out.InstallPs1} {
+		if !strings.Contains(script, "# Gpipe-Version: v1.4.2") {
+			t.Errorf("%s missing Gpipe-Version stamp", name)
+		}
+		if !strings.Contains(script, "# Release-Version: v1.2.3") {
+			t.Errorf("%s missing Release-Version header", name)
+		}
+	}
+}
+
+func TestGenerate_GpipeVersionDefaultsToUnknown(t *testing.T) {
+	cfg, _ := minimalCfg(t) // GpipeVersion deliberately unset
+
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(out.InstallSh, "# Gpipe-Version: unknown") {
+		t.Error("install.sh should stamp 'unknown' when GpipeVersion is unset")
+	}
+}
+
 func TestGenerate_CosignIdentityBakedIn(t *testing.T) {
 	cfg, _ := minimalCfg(t) // GithubRepo: owner/mycli, Version: v1.2.3
 	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
@@ -412,12 +444,7 @@ func TestGenerate_CosignIdentityBakedIn(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// The identity is computed once in Go and interpolated unchanged into
-	// both templates: a single backslash from regexp.QuoteMeta survives
-	// correctly in both bash's double-quoted strings and PowerShell's
-	// single-quoted strings, so the same literal is expected in both files.
-	// Anchored (^...$), repo/version dots escaped, and bound to a workflow
-	// run triggered by pushing this exact version tag.
+	// The same literal must appear in both scripts, unchanged.
 	identity := `^https://github\.com/owner/mycli/\.github/workflows/.+@refs/tags/v1\.2\.3$`
 	if !strings.Contains(out.InstallSh, identity) {
 		t.Errorf("install.sh should contain anchored cosign identity %q", identity)

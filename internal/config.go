@@ -94,6 +94,9 @@ type Config struct {
 	// Runtime-only: not read from config file, always supplied via flags or auto-detected.
 	GithubRepo string
 	Version    string
+	// GpipeVersion is the gpipe version doing the generating, stamped into the
+	// generated scripts. Defaults to "unknown" when unset.
+	GpipeVersion string
 }
 
 // FlagValues holds CLI flag overrides.

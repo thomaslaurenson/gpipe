@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.1 - 2026-08-02
+
+### Added
+
+- Stamp the generating gpipe version into both install scripts
+- Notify gpipe-action on release so it can bump its pinned gpipe version
+
+### Changed
+
+- Rename the generated Version header to Release-Version
+
 ## 1.2.0 - 2026-07-29
 
 ### Added

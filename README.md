@@ -101,6 +101,30 @@ gpipe version    # print gpipe version
 
 `--repo` and `--version` are required for `generate`. If not supplied as flags, they are auto-detected from the git remote origin URL and the nearest git tag respectively. Detection prints what was found so you can verify it.
 
+## Installer Drift
+
+Every generated script records the gpipe version that produced it:
+
+```sh
+# Release-Version: v0.2.5     <- the version this script installs
+# Gpipe-Version: v1.2.0       <- the gpipe that generated the script
+```
+
+The two are unrelated, and keeping them distinct is the point: `Release-Version` tells you what the installer fetches, `Gpipe-Version` tells you how old the installer's own logic is.
+
+A published release is immutable — `checksums.txt` covers `install.sh` and `install.ps1`, and its cosign signature is [bound to the release tag](#verifying-installsh--installps1) — so an installer improvement in a new gpipe **cannot** be backported onto releases already out. It reaches a project the next time that project cuts any release, because the release workflow re-generates the scripts.
+
+In practice this matters less than it sounds, since projects tell users to install from `releases/latest/download/install.sh`, which always resolves to the newest release. The risk is a project that has not released in a long time.
+
+To check what a project is currently shipping, read the stamp off its published installer:
+
+```bash
+curl -fsSL https://github.com/<owner>/<repo>/releases/latest/download/install.sh \
+  | grep '^# Gpipe-Version:'
+```
+
+If that is behind the current gpipe, cut any release of the project to refresh it. An installer with no `Gpipe-Version` line at all predates stamping, and is therefore older than any stamped one.
+
 ## Platform Matrix
 
 | OS      | Arch  | Identifier      |

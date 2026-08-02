@@ -56,3 +56,22 @@ jobs:
             checksums.txt.sigstore.json
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Optional fast path; gpipe-action's daily schedule covers the same
+      # ground. Needs a PAT because GITHUB_TOKEN cannot dispatch cross-repo,
+      # and the token is checked in-script because the secrets context is not
+      # available in step conditionals.
+      - name: Notify gpipe-action of the new release
+        env:
+          GH_TOKEN: ${{ secrets.GPIPE_ACTION_DISPATCH_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [[ -z "${GH_TOKEN:-}" ]]; then
+            echo "GPIPE_ACTION_DISPATCH_TOKEN not set: skipping dispatch."
+            echo "gpipe-action will pick up ${TAG} on its next scheduled sync."
+            exit 0
+          fi
+          gh api "repos/${GITHUB_REPOSITORY_OWNER}/gpipe-action/dispatches" \
+            --method POST \
+            --field event_type=gpipe-released \
+            --field "client_payload[version]=${TAG}"

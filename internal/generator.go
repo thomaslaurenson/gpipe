@@ -22,23 +22,24 @@ type Output struct {
 
 // templateData is the data passed to install script templates
 type templateData struct {
-	GithubRepo  string
-	Version     string
-	Binary      string
-	InstallName string
-	Completions Completions
+	GithubRepo string
+	// Version is the released project version; GpipeVersion is the gpipe that
+	// rendered the script. Unrelated, and stamped separately.
+	Version      string
+	GpipeVersion string
+	Binary       string
+	InstallName  string
+	Completions  Completions
 	// ShPlatforms and Ps1Platforms are disjoint subsets of the configured
 	// platforms, split by OS so install.sh never carries an unreachable
 	// windows_* case arm (and vice versa for install.ps1).
 	ShPlatforms  []platformEntry
 	Ps1Platforms []platformEntry
 	Hooks        hookContent
-	// CosignCertIdentity is the fully-assembled --certificate-identity-regexp
-	// value, computed once here rather than in the templates. A single
-	// backslash from regexp.QuoteMeta survives unchanged whether it lands in
-	// install.sh's double-quoted cert_identity="..." or install.ps1's
-	// single-quoted -certificate-identity-regexp='...', so the identical
-	// string can be dropped into both without any shell-specific re-escaping.
+	// CosignCertIdentity is the assembled --certificate-identity-regexp. Its
+	// QuoteMeta backslashes survive both bash double-quoting and PowerShell
+	// single-quoting, so one string is interpolated into both templates
+	// unchanged.
 	CosignCertIdentity string
 }
 
@@ -127,9 +128,15 @@ func Generate(cfg *Config, tplFS fs.FS, mode ValidationMode) (*Output, error) {
 		}
 	}
 
+	gpipeVersion := cfg.GpipeVersion
+	if gpipeVersion == "" {
+		gpipeVersion = "unknown"
+	}
+
 	data := &templateData{
 		GithubRepo:         cfg.GithubRepo,
 		Version:            cfg.Version,
+		GpipeVersion:       gpipeVersion,
 		Binary:             cfg.Binary,
 		InstallName:        cfg.InstallName,
 		Completions:        cfg.Completions,
@@ -154,12 +161,8 @@ func Generate(cfg *Config, tplFS fs.FS, mode ValidationMode) (*Output, error) {
 		return nil, fmt.Errorf("rendering install.ps1: %w", err)
 	}
 
-	// Computed after rendering (not alongside the platform binary hashes
-	// above) so install.sh and install.ps1 can be included in checksums.txt
-	// themselves: a user who downloads the scripts instead of piping
-	// straight to a shell can verify them the same way, by running
-	// cosign-verify on checksums.txt and then comparing a local sha256sum
-	// against the entry here, rather than trusting the scripts unverified.
+	// After rendering, so the scripts are themselves covered by checksums.txt
+	// and can be verified before being run.
 	checksums, err := buildChecksums(cfg, mode, sh, ps1)
 	if err != nil {
 		return nil, err
