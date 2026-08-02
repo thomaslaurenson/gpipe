@@ -79,11 +79,13 @@ func generateFull(fixtureDir, repoRoot string, platforms map[string]gpipe.Platfo
 	hooksDir := filepath.Join(repoRoot, "test", "fixtures", "hooks")
 
 	cfg := &gpipe.Config{
-		GithubRepo:  "testowner/testrepo",
-		Version:     "v1.2.3",
-		Binary:      "mytool",
-		InstallName: "mytool",
-		Platforms:   platforms,
+		GithubRepo: "testowner/testrepo",
+		Version:    "v1.2.3",
+		// Pinned so fixtures do not churn as `git describe` output changes.
+		GpipeVersion: "v0.0.0-fixture",
+		Binary:       "mytool",
+		InstallName:  "mytool",
+		Platforms:    platforms,
 		Completions: gpipe.Completions{
 			Bash:       true,
 			Zsh:        true,
@@ -117,10 +119,12 @@ func generateChecksums(fixtureDir string, tplFS fs.FS) error {
 	}
 
 	cfg := &gpipe.Config{
-		GithubRepo:  "testowner/testrepo",
-		Version:     "v1.2.3",
-		Binary:      "mytool",
-		InstallName: "mytool",
+		GithubRepo: "testowner/testrepo",
+		Version:    "v1.2.3",
+		// Pinned so fixtures do not churn as `git describe` output changes.
+		GpipeVersion: "v0.0.0-fixture",
+		Binary:       "mytool",
+		InstallName:  "mytool",
 		Platforms: map[string]gpipe.PlatformEntry{
 			"linux_amd64": {Path: checksumsFixture, Name: "fake_binary"},
 		},

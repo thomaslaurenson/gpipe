@@ -59,6 +59,8 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		Sign:        signFlag,
 	})
 
+	cfg.GpipeVersion = Version
+
 	// Auto-detect repo if not supplied
 	if cfg.GithubRepo == "" {
 		detected, err := gpipe.DetectRepo()
