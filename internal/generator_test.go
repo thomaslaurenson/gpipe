@@ -437,6 +437,42 @@ func TestGenerate_GpipeVersionDefaultsToUnknown(t *testing.T) {
 	}
 }
 
+// The binary is built with an unprefixed version (goreleaser's .Version, which
+// is also what the CLI prints), but the header is a tag reference and must be
+// v-prefixed to match the Release-Version above it.
+func TestGenerate_GpipeVersionStampIsTagPrefixed(t *testing.T) {
+	tests := []struct {
+		name  string
+		given string
+		want  string
+	}{
+		{"unprefixed release", "1.4.2", "v1.4.2"},
+		{"unprefixed snapshot", "1.2.1-dev", "v1.2.1-dev"},
+		{"already prefixed", "v1.4.2", "v1.4.2"},
+		{"plain go build", "dev", "dev"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, _ := minimalCfg(t)
+			cfg.GpipeVersion = tc.given
+
+			out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			want := "# Gpipe-Version: " + tc.want + "\n"
+			if !strings.Contains(out.InstallSh, want) {
+				t.Errorf("install.sh: GpipeVersion %q should stamp %q", tc.given, tc.want)
+			}
+			if !strings.Contains(out.InstallPs1, want) {
+				t.Errorf("install.ps1: GpipeVersion %q should stamp %q", tc.given, tc.want)
+			}
+		})
+	}
+}
+
 func TestGenerate_CosignIdentityBakedIn(t *testing.T) {
 	cfg, _ := minimalCfg(t) // GithubRepo: owner/mycli, Version: v1.2.3
 	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)

@@ -95,7 +95,8 @@ type Config struct {
 	GithubRepo string
 	Version    string
 	// GpipeVersion is the gpipe version doing the generating, stamped into the
-	// generated scripts. Defaults to "unknown" when unset.
+	// generated scripts. Accepted in the CLI's unprefixed form and v-prefixed
+	// for the header by stampVersion. Defaults to "unknown" when unset.
 	GpipeVersion string
 }
 

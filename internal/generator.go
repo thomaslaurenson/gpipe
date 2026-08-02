@@ -83,6 +83,25 @@ type hookContent struct {
 	PostPs1 string
 }
 
+// stampVersion normalises a gpipe version for the Gpipe-Version header.
+//
+// The build stamps cmd.Version from goreleaser's .Version, which is the release
+// tag with the v stripped, matching the unprefixed form the CLI prints. The
+// header is a tag reference though, sitting directly above a v-prefixed
+// Release-Version, so the v is added back here.
+//
+// Only versions starting with a digit are prefixed, leaving non-tag values
+// ("dev" from a plain go build, "unknown" below) as they are.
+func stampVersion(version string) string {
+	if version == "" {
+		return "unknown"
+	}
+	if c := version[0]; c >= '0' && c <= '9' {
+		return "v" + version
+	}
+	return version
+}
+
 // Generate produces install.sh, install.ps1, and checksums.txt from cfg.
 //
 // tplFS must be an fs.FS with install.sh and install.ps1 at its root.
@@ -128,10 +147,7 @@ func Generate(cfg *Config, tplFS fs.FS, mode ValidationMode) (*Output, error) {
 		}
 	}
 
-	gpipeVersion := cfg.GpipeVersion
-	if gpipeVersion == "" {
-		gpipeVersion = "unknown"
-	}
+	gpipeVersion := stampVersion(cfg.GpipeVersion)
 
 	data := &templateData{
 		GithubRepo:         cfg.GithubRepo,
