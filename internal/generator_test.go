@@ -1,6 +1,7 @@
 package gpipe_test
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,10 +27,9 @@ func minimalCfg(t *testing.T) (*gpipe.Config, string) {
 	}
 
 	cfg := &gpipe.Config{
-		GithubRepo:  "owner/mycli",
-		Version:     "v1.2.3",
-		Binary:      "mycli",
-		InstallName: "mycli",
+		GithubRepo: "owner/mycli",
+		Version:    "v1.2.3",
+		Binary:     "mycli",
 		Platforms: map[string]gpipe.PlatformEntry{
 			"linux_amd64": {Path: binPath, Name: "mycli-linux-x86_64"},
 		},
@@ -38,6 +38,7 @@ func minimalCfg(t *testing.T) (*gpipe.Config, string) {
 }
 
 func TestGenerate_NoLeftoverMarkers(t *testing.T) {
+	t.Parallel()
 	cfg, _ := minimalCfg(t)
 	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 	if err != nil {
@@ -52,6 +53,7 @@ func TestGenerate_NoLeftoverMarkers(t *testing.T) {
 }
 
 func TestGenerate_ChecksumFormat(t *testing.T) {
+	t.Parallel()
 	cfg, _ := minimalCfg(t)
 	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 	if err != nil {
@@ -85,6 +87,7 @@ func TestGenerate_ChecksumFormat(t *testing.T) {
 }
 
 func TestGenerate_MultiplePlatformsChecksumOrder(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	// Create fake binaries for multiple platforms
@@ -105,11 +108,10 @@ func TestGenerate_MultiplePlatformsChecksumOrder(t *testing.T) {
 	}
 
 	cfg := &gpipe.Config{
-		GithubRepo:  "owner/mycli",
-		Version:     "v1.2.3",
-		Binary:      "mycli",
-		InstallName: "mycli",
-		Platforms:   platforms,
+		GithubRepo: "owner/mycli",
+		Version:    "v1.2.3",
+		Binary:     "mycli",
+		Platforms:  platforms,
 	}
 
 	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
@@ -141,147 +143,99 @@ func TestGenerate_MultiplePlatformsChecksumOrder(t *testing.T) {
 	}
 }
 
-func TestGenerate_CompletionBlockAbsentWhenDisabled(t *testing.T) {
+// Completions and dotfile PATH rewriting were removed in 1.4.0. Both wrote to
+// files the user did not ask the installer to touch, so their absence is
+// asserted rather than left to the templates.
+func TestGenerate_NoCompletionsOrDotfileWrites(t *testing.T) {
+	t.Parallel()
 	cfg, _ := minimalCfg(t)
 	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	for _, marker := range []string{
-		"# gpipe test: bash-completions",
-		"# gpipe test: zsh-completions",
-		"# gpipe test: fish-completions",
-	} {
+	for _, marker := range []string{"completion", ".bashrc", ".zshrc", ".zfunc", "config.fish"} {
 		if strings.Contains(out.InstallSh, marker) {
-			t.Errorf("install.sh should not contain %q when completions are disabled", marker)
+			t.Errorf("install.sh should not reference %q", marker)
 		}
 	}
-	if strings.Contains(out.InstallPs1, "# gpipe test: powershell-completions") {
-		t.Error("install.ps1 should not contain powershell-completions marker when disabled")
+	if strings.Contains(out.InstallPs1, "Install-Completion") {
+		t.Error("install.ps1 should not contain Install-Completion")
 	}
 }
 
-func TestGenerate_CompletionBlockPresentWhenEnabled(t *testing.T) {
-	cfg, _ := minimalCfg(t)
-	cfg.Completions.Bash = true
-	cfg.Completions.Zsh = true
-	cfg.Completions.Fish = true
-
-	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func TestGenerate_HookInjectedAndWrapped(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		filename string
+		content  string
+		set      func(cfg *gpipe.Config, path string)
+		script   func(out *gpipe.Output) string
+		sentinel string
+	}{
+		{
+			name:     "sh pre-install",
+			filename: "pre-install.sh",
+			content:  "echo 'pre hook'",
+			set:      func(cfg *gpipe.Config, p string) { cfg.Hooks.PreSh = p },
+			script:   func(o *gpipe.Output) string { return o.InstallSh },
+			sentinel: "# gpipe test: pre-install-hook",
+		},
+		{
+			name:     "sh post-install",
+			filename: "post-install.sh",
+			content:  "echo 'post hook'",
+			set:      func(cfg *gpipe.Config, p string) { cfg.Hooks.PostSh = p },
+			script:   func(o *gpipe.Output) string { return o.InstallSh },
+			sentinel: "# gpipe test: post-install-hook",
+		},
+		{
+			name:     "ps1 pre-install",
+			filename: "pre-install.ps1",
+			content:  "Write-Host 'pre hook'",
+			set:      func(cfg *gpipe.Config, p string) { cfg.Hooks.PrePs1 = p },
+			script:   func(o *gpipe.Output) string { return o.InstallPs1 },
+			sentinel: "# gpipe test: pre-install-hook",
+		},
+		{
+			name:     "ps1 post-install",
+			filename: "post-install.ps1",
+			content:  "Write-Host 'post hook'",
+			set:      func(cfg *gpipe.Config, p string) { cfg.Hooks.PostPs1 = p },
+			script:   func(o *gpipe.Output) string { return o.InstallPs1 },
+			sentinel: "# gpipe test: post-install-hook",
+		},
 	}
 
-	for _, marker := range []string{
-		"# gpipe test: bash-completions",
-		"# gpipe test: zsh-completions",
-		"# gpipe test: fish-completions",
-	} {
-		if !strings.Contains(out.InstallSh, marker) {
-			t.Errorf("install.sh missing %q when completions are enabled", marker)
-		}
-	}
-}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg, dir := minimalCfg(t)
+			hookPath := filepath.Join(dir, tc.filename)
+			if err := os.WriteFile(hookPath, []byte(tc.content+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			tc.set(cfg, hookPath)
 
-func TestGenerate_Ps1CompletionsPresentWhenEnabled(t *testing.T) {
-	cfg, _ := minimalCfg(t)
-	cfg.Completions.PowerShell = true
+			out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
-	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if !strings.Contains(out.InstallPs1, "# gpipe test: powershell-completions") {
-		t.Error("install.ps1 missing powershell-completions marker when enabled")
-	}
-	if !strings.Contains(out.InstallPs1, "Install-Completion") {
-		t.Error("install.ps1 missing Install-Completion function when enabled")
-	}
-}
-
-func TestGenerate_ShPostHookInjectedAndWrapped(t *testing.T) {
-	cfg, dir := minimalCfg(t)
-
-	hookPath := filepath.Join(dir, "post-install.sh")
-	os.WriteFile(hookPath, []byte("echo 'post hook'\n"), 0o644)
-	cfg.Hooks.PostSh = hookPath
-
-	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if !strings.Contains(out.InstallSh, "# gpipe test: post-install-hook") {
-		t.Error("install.sh missing post-install-hook sentinel")
-	}
-	if !strings.Contains(out.InstallSh, "echo 'post hook'") {
-		t.Error("install.sh missing post hook content")
-	}
-}
-
-func TestGenerate_ShPreHookInjectedAndWrapped(t *testing.T) {
-	cfg, dir := minimalCfg(t)
-
-	hookPath := filepath.Join(dir, "pre-install.sh")
-	os.WriteFile(hookPath, []byte("echo 'pre hook'\n"), 0o644)
-	cfg.Hooks.PreSh = hookPath
-
-	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if !strings.Contains(out.InstallSh, "# gpipe test: pre-install-hook") {
-		t.Error("install.sh missing pre-install-hook sentinel")
-	}
-	if !strings.Contains(out.InstallSh, "echo 'pre hook'") {
-		t.Error("install.sh missing pre hook content")
-	}
-}
-
-func TestGenerate_Ps1PostHookInjectedAndWrapped(t *testing.T) {
-	cfg, dir := minimalCfg(t)
-
-	hookPath := filepath.Join(dir, "post-install.ps1")
-	os.WriteFile(hookPath, []byte("Write-Host 'post hook'\n"), 0o644)
-	cfg.Hooks.PostPs1 = hookPath
-
-	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if !strings.Contains(out.InstallPs1, "# gpipe test: post-install-hook") {
-		t.Error("install.ps1 missing post-install-hook sentinel")
-	}
-	if !strings.Contains(out.InstallPs1, "Write-Host 'post hook'") {
-		t.Error("install.ps1 missing post hook content")
-	}
-}
-
-func TestGenerate_Ps1PreHookInjectedAndWrapped(t *testing.T) {
-	cfg, dir := minimalCfg(t)
-
-	hookPath := filepath.Join(dir, "pre-install.ps1")
-	os.WriteFile(hookPath, []byte("Write-Host 'pre hook'\n"), 0o644)
-	cfg.Hooks.PrePs1 = hookPath
-
-	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if !strings.Contains(out.InstallPs1, "# gpipe test: pre-install-hook") {
-		t.Error("install.ps1 missing pre-install-hook sentinel")
-	}
-	if !strings.Contains(out.InstallPs1, "Write-Host 'pre hook'") {
-		t.Error("install.ps1 missing pre hook content")
+			script := tc.script(out)
+			if !strings.Contains(script, tc.sentinel) {
+				t.Errorf("missing sentinel %q", tc.sentinel)
+			}
+			if !strings.Contains(script, tc.content) {
+				t.Errorf("missing hook content %q", tc.content)
+			}
+		})
 	}
 }
 
 func TestGenerate_NoHookLeavesNoMarker(t *testing.T) {
+	t.Parallel()
 	cfg, _ := minimalCfg(t)
 	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 	if err != nil {
@@ -301,39 +255,54 @@ func TestGenerate_NoHookLeavesNoMarker(t *testing.T) {
 	}
 }
 
-func TestGenerate_BashSyntaxErrorInHookFails(t *testing.T) {
-	cfg, dir := minimalCfg(t)
-
-	hookPath := filepath.Join(dir, "bad.sh")
-	os.WriteFile(hookPath, []byte("if [\n"), 0o644) // intentionally broken bash
-	cfg.Hooks.PreSh = hookPath
-
-	_, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
-	if err == nil {
-		t.Fatal("expected error for bash syntax error in hook, got nil")
+func TestGenerate_HookSyntaxErrorFails(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		filename string
+		content  string
+		set      func(cfg *gpipe.Config, path string)
+		want     error
+		needPwsh bool
+	}{
+		{
+			name:     "broken bash hook",
+			filename: "bad.sh",
+			content:  "if [\n",
+			set:      func(cfg *gpipe.Config, p string) { cfg.Hooks.PreSh = p },
+			want:     gpipe.ErrBashSyntax,
+		},
+		{
+			name:     "broken powershell hook",
+			filename: "bad.ps1",
+			content:  "if (\n",
+			set:      func(cfg *gpipe.Config, p string) { cfg.Hooks.PrePs1 = p },
+			want:     gpipe.ErrPs1Syntax,
+			needPwsh: true,
+		},
 	}
-	if !strings.Contains(err.Error(), "bash syntax error") {
-		t.Errorf("expected 'bash syntax error' in error, got: %v", err)
-	}
-}
 
-func TestGenerate_Ps1SyntaxErrorInHookFails(t *testing.T) {
-	if _, err := exec.LookPath("pwsh"); err != nil {
-		t.Skip("pwsh not installed, cannot exercise the ps1 syntax check")
-	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if tc.needPwsh {
+				if _, err := exec.LookPath("pwsh"); err != nil {
+					t.Skip("pwsh not installed, cannot exercise the ps1 syntax check")
+				}
+			}
 
-	cfg, dir := minimalCfg(t)
+			cfg, dir := minimalCfg(t)
+			hookPath := filepath.Join(dir, tc.filename)
+			if err := os.WriteFile(hookPath, []byte(tc.content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			tc.set(cfg, hookPath)
 
-	hookPath := filepath.Join(dir, "bad.ps1")
-	os.WriteFile(hookPath, []byte("if (\n"), 0o644) // intentionally broken PowerShell
-	cfg.Hooks.PrePs1 = hookPath
-
-	_, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
-	if err == nil {
-		t.Fatal("expected error for powershell syntax error in hook, got nil")
-	}
-	if !strings.Contains(err.Error(), "powershell syntax error") {
-		t.Errorf("expected 'powershell syntax error' in error, got: %v", err)
+			_, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
+			if !errors.Is(err, tc.want) {
+				t.Errorf("expected %v, got: %v", tc.want, err)
+			}
+		})
 	}
 }
 
@@ -345,10 +314,9 @@ func TestGenerate_Ps1SyntaxCheckSkippedWhenPwshMissing(t *testing.T) {
 	os.WriteFile(hookPath, []byte("Write-Host 'hello'\n"), 0o644)
 
 	cfg := &gpipe.Config{
-		GithubRepo:  "owner/mycli",
-		Version:     "v1.2.3",
-		Binary:      "mycli",
-		InstallName: "mycli",
+		GithubRepo: "owner/mycli",
+		Version:    "v1.2.3",
+		Binary:     "mycli",
 		Platforms: map[string]gpipe.PlatformEntry{
 			"linux_amd64": {Path: "/nonexistent", Name: "mycli-linux-x86_64"},
 		},
@@ -363,11 +331,11 @@ func TestGenerate_Ps1SyntaxCheckSkippedWhenPwshMissing(t *testing.T) {
 }
 
 func TestGenerate_DryRunSkipsMissingBinary(t *testing.T) {
+	t.Parallel()
 	cfg := &gpipe.Config{
-		GithubRepo:  "owner/mycli",
-		Version:     "v1.2.3",
-		Binary:      "mycli",
-		InstallName: "mycli",
+		GithubRepo: "owner/mycli",
+		Version:    "v1.2.3",
+		Binary:     "mycli",
 		Platforms: map[string]gpipe.PlatformEntry{
 			"linux_amd64": {Path: "/nonexistent/mycli-linux-x86_64", Name: "mycli-linux-x86_64"},
 		},
@@ -392,6 +360,7 @@ func TestGenerate_DryRunSkipsMissingBinary(t *testing.T) {
 }
 
 func TestGenerate_HeaderPresent(t *testing.T) {
+	t.Parallel()
 	cfg, _ := minimalCfg(t)
 	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 	if err != nil {
@@ -406,6 +375,7 @@ func TestGenerate_HeaderPresent(t *testing.T) {
 }
 
 func TestGenerate_GpipeVersionStamped(t *testing.T) {
+	t.Parallel()
 	cfg, _ := minimalCfg(t) // Version: v1.2.3
 	cfg.GpipeVersion = "v1.4.2"
 
@@ -425,6 +395,7 @@ func TestGenerate_GpipeVersionStamped(t *testing.T) {
 }
 
 func TestGenerate_GpipeVersionDefaultsToUnknown(t *testing.T) {
+	t.Parallel()
 	cfg, _ := minimalCfg(t) // GpipeVersion deliberately unset
 
 	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
@@ -441,19 +412,21 @@ func TestGenerate_GpipeVersionDefaultsToUnknown(t *testing.T) {
 // is also what the CLI prints), but the header is a tag reference and must be
 // v-prefixed to match the Release-Version above it.
 func TestGenerate_GpipeVersionStampIsTagPrefixed(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		given string
 		want  string
 	}{
-		{"unprefixed release", "1.4.2", "v1.4.2"},
-		{"unprefixed snapshot", "1.2.1-dev", "v1.2.1-dev"},
-		{"already prefixed", "v1.4.2", "v1.4.2"},
-		{"plain go build", "dev", "dev"},
+		{name: "unprefixed release", given: "1.4.2", want: "v1.4.2"},
+		{name: "unprefixed snapshot", given: "1.2.1-dev", want: "v1.2.1-dev"},
+		{name: "already prefixed from git describe", given: "v1.4.2", want: "v1.4.2"},
+		{name: "plain go build", given: "dev", want: "dev"},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			cfg, _ := minimalCfg(t)
 			cfg.GpipeVersion = tc.given
 
@@ -473,72 +446,63 @@ func TestGenerate_GpipeVersionStampIsTagPrefixed(t *testing.T) {
 	}
 }
 
-func TestGenerate_CosignIdentityBakedIn(t *testing.T) {
-	cfg, _ := minimalCfg(t) // GithubRepo: owner/mycli, Version: v1.2.3
-	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	// The same literal must appear in both scripts, unchanged.
-	identity := `^https://github\.com/owner/mycli/\.github/workflows/.+@refs/tags/v1\.2\.3$`
-	if !strings.Contains(out.InstallSh, identity) {
-		t.Errorf("install.sh should contain anchored cosign identity %q", identity)
-	}
-	if !strings.Contains(out.InstallPs1, identity) {
-		t.Errorf("install.ps1 should contain anchored cosign identity %q", identity)
-	}
-}
-
-func TestGenerate_CosignIdentityEscapesDotsInRepo(t *testing.T) {
-	dir := t.TempDir()
-	binPath := filepath.Join(dir, "bin")
-	if err := os.WriteFile(binPath, []byte("x"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg := &gpipe.Config{
-		GithubRepo:  "owner/my.tool",
-		Version:     "v1.0.0",
-		Binary:      "mycli",
-		InstallName: "mycli",
-		Platforms: map[string]gpipe.PlatformEntry{
-			"linux_amd64": {Path: binPath, Name: "mycli-linux-x86_64"},
+// The cosign certificate identity is baked into both scripts as one literal.
+// Each case asserts a different property of that literal: the full anchored
+// form, that regex metacharacters in the repo name are escaped, and that the
+// pattern is bound to this exact release tag so a signature made for another
+// release cannot be replayed against it.
+func TestGenerate_CosignIdentity(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		repo    string
+		version string
+		want    string
+	}{
+		{
+			name:    "anchored to repo and tag",
+			repo:    "owner/mycli",
+			version: "v1.2.3",
+			want:    `^https://github\.com/owner/mycli/\.github/workflows/.+@refs/tags/v1\.2\.3$`,
+		},
+		{
+			name:    "escapes dots in repo name",
+			repo:    "owner/my.tool",
+			version: "v1.0.0",
+			want:    `owner/my\.tool`,
+		},
+		{
+			name:    "bound to the release tag ref",
+			repo:    "owner/mycli",
+			version: "v1.2.3",
+			want:    `@refs/tags/v1\.2\.3$`,
 		},
 	}
-	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
 
-	// The dot in "my.tool" must be regex-escaped (\.); an unescaped dot would
-	// make the pattern also match confusable names like "my-tool"/"myXtool".
-	escaped := `owner/my\.tool`
-	if !strings.Contains(out.InstallSh, escaped) {
-		t.Errorf("install.sh cosign identity should escape the dot in repo name, want substring %q in:\n%s", escaped, out.InstallSh)
-	}
-	if !strings.Contains(out.InstallPs1, escaped) {
-		t.Errorf("install.ps1 cosign identity should escape the dot in repo name, want substring %q", escaped)
-	}
-}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			cfg, _ := minimalCfg(t)
+			cfg.GithubRepo = tc.repo
+			cfg.Version = tc.version
 
-func TestGenerate_CosignIdentityBindsVersionTagRef(t *testing.T) {
-	cfg, _ := minimalCfg(t) // Version: v1.2.3
-	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+			out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
 
-	wantSuffix := `@refs/tags/v1\.2\.3$`
-	if !strings.Contains(out.InstallSh, wantSuffix) {
-		t.Errorf("install.sh cosign identity should be bound to the release tag ref, want substring %q", wantSuffix)
-	}
-	if !strings.Contains(out.InstallPs1, wantSuffix) {
-		t.Errorf("install.ps1 cosign identity should be bound to the release tag ref, want substring %q", wantSuffix)
+			if !strings.Contains(out.InstallSh, tc.want) {
+				t.Errorf("install.sh cosign identity missing %q", tc.want)
+			}
+			if !strings.Contains(out.InstallPs1, tc.want) {
+				t.Errorf("install.ps1 cosign identity missing %q", tc.want)
+			}
+		})
 	}
 }
 
 func TestGenerate_Ps1FunctionsPresent(t *testing.T) {
+	t.Parallel()
 	cfg, _ := minimalCfg(t)
 	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 	if err != nil {
@@ -563,6 +527,7 @@ func TestGenerate_Ps1FunctionsPresent(t *testing.T) {
 }
 
 func TestGenerate_Ps1DotSourceGuardPresent(t *testing.T) {
+	t.Parallel()
 	cfg, _ := minimalCfg(t)
 	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 	if err != nil {
@@ -575,6 +540,7 @@ func TestGenerate_Ps1DotSourceGuardPresent(t *testing.T) {
 }
 
 func TestGenerate_Ps1ScriptScopeConstants(t *testing.T) {
+	t.Parallel()
 	cfg, _ := minimalCfg(t)
 	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 	if err != nil {
@@ -585,7 +551,6 @@ func TestGenerate_Ps1ScriptScopeConstants(t *testing.T) {
 		"$script:GithubRepo",
 		"$script:Version",
 		"$script:Binary",
-		"$script:InstallName",
 	} {
 		if !strings.Contains(out.InstallPs1, constant) {
 			t.Errorf("install.ps1 missing script-scoped constant: %s", constant)
@@ -594,6 +559,7 @@ func TestGenerate_Ps1ScriptScopeConstants(t *testing.T) {
 }
 
 func TestGenerate_ShFunctionsPresent(t *testing.T) {
+	t.Parallel()
 	cfg, _ := minimalCfg(t)
 	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 	if err != nil {
@@ -619,6 +585,7 @@ func TestGenerate_ShFunctionsPresent(t *testing.T) {
 }
 
 func TestGenerate_ShBashSourceGuardPresent(t *testing.T) {
+	t.Parallel()
 	cfg, _ := minimalCfg(t)
 	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 	if err != nil {
@@ -630,12 +597,13 @@ func TestGenerate_ShBashSourceGuardPresent(t *testing.T) {
 	}
 }
 
-func TestSignChecksums_SignFalseNoError(t *testing.T) {
+// Signing is a separate step driven by --sign, never something Generate does
+// on its own, so generation must not depend on cosign being installed.
+func TestGenerate_DoesNotRequireCosign(t *testing.T) {
+	t.Parallel()
 	cfg, _ := minimalCfg(t)
-	cfg.Sign = false
-	_, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
-	if err != nil {
-		t.Fatalf("sign=false should not require cosign, got error: %v", err)
+	if _, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal); err != nil {
+		t.Fatalf("generation should not require cosign, got error: %v", err)
 	}
 }
 
@@ -643,11 +611,8 @@ func TestSignChecksums_CosignMissingReturnsError(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 
 	err := gpipe.SignChecksums("/some/checksums.txt")
-	if err == nil {
-		t.Fatal("expected error when cosign is not in PATH, got nil")
-	}
-	if !strings.Contains(err.Error(), "cosign not found") {
-		t.Errorf("expected 'cosign not found' in error, got: %v", err)
+	if !errors.Is(err, gpipe.ErrCosignNotFound) {
+		t.Errorf("expected %v, got: %v", gpipe.ErrCosignNotFound, err)
 	}
 }
 
@@ -660,10 +625,9 @@ func TestSignChecksums_BashSyntaxCheckSkippedWhenBashMissing(t *testing.T) {
 	os.WriteFile(hookPath, []byte("echo hello\n"), 0o644)
 
 	cfg := &gpipe.Config{
-		GithubRepo:  "owner/mycli",
-		Version:     "v1.2.3",
-		Binary:      "mycli",
-		InstallName: "mycli",
+		GithubRepo: "owner/mycli",
+		Version:    "v1.2.3",
+		Binary:     "mycli",
 		Platforms: map[string]gpipe.PlatformEntry{
 			"linux_amd64": {Path: "/nonexistent", Name: "mycli-linux-x86_64"},
 		},

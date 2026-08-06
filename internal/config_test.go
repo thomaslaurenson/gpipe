@@ -25,14 +25,10 @@ func TestLoadConfig_ValidFile(t *testing.T) {
 	path := filepath.Join(dir, ".gpipe.yml")
 	content := `
 binary: mycli
-install-name: cli
-sign: true
 platforms:
   linux_amd64:
     path: ./dist/mycli-linux-x86_64
     name: mycli-linux-x86_64
-completions:
-  bash: true
 `
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
@@ -45,9 +41,6 @@ completions:
 	if cfg.Binary != "mycli" {
 		t.Errorf("expected binary=mycli, got %q", cfg.Binary)
 	}
-	if cfg.InstallName != "cli" {
-		t.Errorf("expected install-name=cli, got %q", cfg.InstallName)
-	}
 	// repo and version must not be read from config file
 	if cfg.GithubRepo != "" {
 		t.Errorf("repo should not be read from config file, got %q", cfg.GithubRepo)
@@ -55,17 +48,29 @@ completions:
 	if cfg.Version != "" {
 		t.Errorf("version should not be read from config file, got %q", cfg.Version)
 	}
-	if !cfg.Sign {
-		t.Error("expected sign=true")
-	}
 	if cfg.Platforms["linux_amd64"].Path != "./dist/mycli-linux-x86_64" {
 		t.Errorf("unexpected platform path: %q", cfg.Platforms["linux_amd64"].Path)
 	}
 	if cfg.Platforms["linux_amd64"].Name != "mycli-linux-x86_64" {
 		t.Errorf("unexpected platform name: %q", cfg.Platforms["linux_amd64"].Name)
 	}
-	if !cfg.Completions.Bash {
-		t.Error("expected completions.bash=true")
+}
+
+// The 1.4.0 removals (install-name, sign, completions) rely on strict decoding to
+// surface as an error naming the offending key, rather than being silently
+// ignored the way a non-strict decoder would.
+func TestLoadConfig_RemovedKeysRejected(t *testing.T) {
+	t.Parallel()
+	for _, key := range []string{"install-name: cli", "sign: true", "completions:\n  bash: true"} {
+		dir := t.TempDir()
+		path := filepath.Join(dir, ".gpipe.yml")
+		content := "binary: mycli\n" + key + "\n"
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := gpipe.LoadConfig(path); err == nil {
+			t.Errorf("expected removed key %q to be rejected", key)
+		}
 	}
 }
 
@@ -113,18 +118,19 @@ func TestLoadConfig_UnknownFieldRejected(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".gpipe.yml")
-	// install_name (underscore) is a typo for install-name (hyphen): this
-	// must be a load error, not silently ignored.
+	// pre_sh (underscore) is a typo for pre-sh (hyphen): this must be a load
+	// error, not a hook that silently never runs.
 	content := `
 binary: mycli
-install_name: cli
+hooks:
+  pre_sh: ./pre-install.sh
 `
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	_, err := gpipe.LoadConfig(path)
 	if err == nil {
-		t.Fatal("expected error for unknown field install_name, got nil")
+		t.Fatal("expected error for unknown field pre_sh, got nil")
 	}
 }
 
@@ -162,29 +168,16 @@ func TestLoadConfig_CommentOnlyFileNoError(t *testing.T) {
 
 func TestMergeFlags_OverridesApplied(t *testing.T) {
 	t.Parallel()
-	signTrue := true
 	cfg := &gpipe.Config{Binary: "old", GithubRepo: "old/old"}
 	gpipe.MergeFlags(cfg, gpipe.FlagValues{
-		GithubRepo:  "new/repo",
-		Version:     "v1.0.0",
-		Binary:      "newbinary",
-		InstallName: "newname",
-		Sign:        &signTrue,
+		GithubRepo: "new/repo",
+		Version:    "v1.0.0",
 	})
 	if cfg.GithubRepo != "new/repo" {
 		t.Errorf("expected repo=new/repo, got %q", cfg.GithubRepo)
 	}
 	if cfg.Version != "v1.0.0" {
 		t.Errorf("expected version=v1.0.0, got %q", cfg.Version)
-	}
-	if cfg.Binary != "newbinary" {
-		t.Errorf("expected binary=newbinary, got %q", cfg.Binary)
-	}
-	if cfg.InstallName != "newname" {
-		t.Errorf("expected install-name=newname, got %q", cfg.InstallName)
-	}
-	if !cfg.Sign {
-		t.Error("expected sign=true")
 	}
 }
 
@@ -200,30 +193,11 @@ func TestMergeFlags_EmptyFlagsDoNotOverride(t *testing.T) {
 	}
 }
 
-func TestMergeFlags_InstallNameDefaultsToBinary(t *testing.T) {
-	t.Parallel()
-	cfg := &gpipe.Config{Binary: "mycli"}
-	gpipe.MergeFlags(cfg, gpipe.FlagValues{})
-	if cfg.InstallName != "mycli" {
-		t.Errorf("install-name should default to binary, got %q", cfg.InstallName)
-	}
-}
-
-func TestMergeFlags_InstallNameNotOverriddenWhenSet(t *testing.T) {
-	t.Parallel()
-	cfg := &gpipe.Config{Binary: "mycli", InstallName: "cli"}
-	gpipe.MergeFlags(cfg, gpipe.FlagValues{})
-	if cfg.InstallName != "cli" {
-		t.Errorf("existing install-name should be preserved, got %q", cfg.InstallName)
-	}
-}
-
 func minimalValidConfig() *gpipe.Config {
 	return &gpipe.Config{
-		GithubRepo:  "owner/repo",
-		Version:     "v1.2.3",
-		Binary:      "mycli",
-		InstallName: "mycli",
+		GithubRepo: "owner/repo",
+		Version:    "v1.2.3",
+		Binary:     "mycli",
 		Platforms: map[string]gpipe.PlatformEntry{
 			"linux_amd64": {Path: "/nonexistent/path", Name: "mycli-linux-x86_64"},
 		},
@@ -403,25 +377,6 @@ func TestValidate_ValidateModeIgnoresMissingBinaryFiles(t *testing.T) {
 	}
 }
 
-func TestMergeFlags_SignNilDoesNotOverride(t *testing.T) {
-	t.Parallel()
-	cfg := &gpipe.Config{Sign: true}
-	gpipe.MergeFlags(cfg, gpipe.FlagValues{})
-	if !cfg.Sign {
-		t.Error("nil Sign flag should not override config sign=true")
-	}
-}
-
-func TestMergeFlags_SignFalseOverridesTrue(t *testing.T) {
-	t.Parallel()
-	signFalse := false
-	cfg := &gpipe.Config{Sign: true}
-	gpipe.MergeFlags(cfg, gpipe.FlagValues{Sign: &signFalse})
-	if cfg.Sign {
-		t.Error("Sign=false flag should override config sign=true")
-	}
-}
-
 func TestMergeFlags_CLIOverridesRepoAndVersion(t *testing.T) {
 	t.Parallel()
 	cfg := &gpipe.Config{GithubRepo: "old/repo", Version: "v1.0.0"}
@@ -583,16 +538,6 @@ func TestValidate_RejectsMetacharsInBinary(t *testing.T) {
 		cfg.Binary = p
 		errs := gpipe.Validate(cfg, gpipe.ModeValidate)
 		assertContainsError(t, errs, "invalid binary")
-	}
-}
-
-func TestValidate_RejectsMetacharsInInstallName(t *testing.T) {
-	t.Parallel()
-	for _, p := range injectionPayloads {
-		cfg := minimalValidConfig()
-		cfg.InstallName = p
-		errs := gpipe.Validate(cfg, gpipe.ModeValidate)
-		assertContainsError(t, errs, "invalid install-name")
 	}
 }
 
