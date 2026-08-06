@@ -11,5 +11,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    labels:
+      - "dependencies"
+    groups:
+      dev-dependencies:
+        dependency-type: "development"
     assignees:
       - "thomaslaurenson"
