@@ -1,0 +1,78 @@
+name: gpipe
+description: Generate install.sh, install.ps1, and checksums.txt for GitHub releases
+author: thomaslaurenson
+
+inputs:
+  version:
+    description: Release version tag (e.g. v1.2.3). Passed to gpipe, which validates it as a semantic version.
+    required: false
+    default: ${{ github.ref_name }}
+  repo:
+    description: GitHub repository in owner/repo format
+    required: false
+    default: ${{ github.repository }}
+  config:
+    description: Path to .gpipe.yml config file relative to repo root
+    required: false
+    default: .gpipe.yml
+  cosign_sign:
+    description: "Sign checksums.txt with cosign after generation. Requires id-token: write."
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Install cosign
+      if: inputs.cosign_sign == 'true'
+      uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+    # gpipe is built from this action's own checkout rather than downloaded
+    # from a release. github.action_path holds the gpipe repository at exactly
+    # the ref the caller requested, so the code that runs is the code that ref
+    # names, with no version pin to keep in sync and no checksum or signature
+    # to verify: authenticity comes from the ref itself.
+    #
+    # GOTOOLCHAIN=local pins the build to the runner's installed Go rather than
+    # letting go.mod's toolchain directive pull a different one down, so an
+    # actions/setup-go earlier in the caller's job cannot change what is built
+    # here. GitHub-hosted runners ship Go preinstalled.
+    #
+    # Version is stamped from github.action_ref, the ref this action was
+    # resolved at, so the Gpipe-Version header in every generated script
+    # records what the caller pinned. A floating "@v1" therefore stamps "v1",
+    # and "@v1.4.0" stamps "v1.4.0" -- the stamp is exactly as precise as the
+    # pin. Without this the binary would report its "dev" build default and
+    # every generated installer would be stamped dev. Empty for a local
+    # (uses: ./) checkout, which falls back to dev.
+    - name: Build gpipe
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        GOTOOLCHAIN: local
+        GPIPE_REF: ${{ github.action_ref }}
+      run: |
+        go build \
+          -ldflags="-s -w -X github.com/thomaslaurenson/gpipe/cmd.Version=${GPIPE_REF:-dev}" \
+          -o "$RUNNER_TEMP/gpipe" .
+
+    # All action inputs are passed to shell steps via the environment rather
+    # than interpolated into the script with ${{ }}. GitHub expands ${{ }} into
+    # the script source before the shell runs, so interpolating an input (e.g.
+    # a tag name, which may legally contain shell metacharacters) directly into
+    # a run block is a script-injection vector. Referencing "$ENV_VAR" instead
+    # keeps the value out of the script text and safely quoted.
+    - name: Run gpipe generate
+      shell: bash
+      working-directory: ${{ github.workspace }}
+      env:
+        GPIPE_REPO: ${{ inputs.repo }}
+        GPIPE_TAG: ${{ inputs.version }}
+        GPIPE_CONFIG: ${{ inputs.config }}
+        GPIPE_SIGN: ${{ inputs.cosign_sign }}
+      run: |
+        args=(--repo "$GPIPE_REPO" --version "$GPIPE_TAG" --config "$GPIPE_CONFIG")
+        if [[ "$GPIPE_SIGN" == "true" ]]; then
+          args+=(--sign)
+        fi
+        "$RUNNER_TEMP/gpipe" generate "${args[@]}"
