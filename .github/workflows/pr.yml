@@ -3,6 +3,17 @@ name: PR
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/**"
+      - "**.go"
+      - go.mod
+      - go.sum
+      - Makefile
+      - ".goreleaser*.yml"
+      - .gpipe.yml
+      - action.yml
+      - "templates/**"
+      - "test/**"
 
 permissions:
   contents: read

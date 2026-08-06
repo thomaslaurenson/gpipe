@@ -8,8 +8,12 @@ on:
       - "**.go"
       - go.mod
       - go.sum
-      - .goreleaser*.yml
       - Makefile
+      - ".goreleaser*.yml"
+      - .gpipe.yml
+      - action.yml
+      - "templates/**"
+      - "test/**"
 
 permissions:
   contents: write
