@@ -149,7 +149,7 @@ Describe 'Confirm-Checksum' {
     }
 
     It 'is case-insensitive on the hash comparison' {
-        # Write the expected hash in uppercase — should still pass.
+        # Write the expected hash in uppercase, which should still pass
         Set-Content -Path (Join-Path $TestDrive 'checksums.txt') `
             -Value "$($script:FakeHash.ToUpper())  fake_binary_ps"
         { Confirm-Checksum -TmpDir $TestDrive -AssetName 'fake_binary_ps' } | Should -Not -Throw
@@ -168,10 +168,10 @@ Describe 'Resolve-InstallDir' {
         $result.Path | Should -Be (Join-Path $TestDrive "Programs\mytool")
     }
 
-    It 'user install path includes the install name' {
+    It 'user install path includes the binary name' {
         $env:LOCALAPPDATA = $TestDrive
         $result = Resolve-InstallDir -UserInstall $true
-        $result.Path | Should -BeLike "*$script:InstallName*"
+        $result.Path | Should -BeLike '*mytool*'
     }
 
     It 'user install reports IsUserInstall = true' {
@@ -335,20 +335,18 @@ Describe 'Invoke-DownloadAsset' {
 }
 
 # ============================================================
-# install_rendered_full.ps1: hook and completion injection
+# install_rendered.ps1: hook injection
 # ============================================================
 #
-# These tests verify that the full fixture — rendered with all completions
-# enabled and pre/post hooks injected from test/fixtures/hooks/ — contains
-# the expected sentinels and hook content. File-content checks read the
-# raw file text. The function-availability check dot-sources the full
-# fixture in a child scope to confirm Install-Completion is defined.
+# These tests verify that the fixture, rendered with pre/post hooks injected
+# from test/fixtures/hooks/, contains the expected sentinels and hook
+# content. File-content checks read the raw file text.
 
-Describe 'install_rendered.ps1: hook and completion injection' {
+Describe 'install_rendered.ps1: hook injection' {
 
-    It 'powershell-completions sentinel is present in file' {
+    It 'contains no completion logic' {
         $renderedContent = Get-Content $script:RenderedPs1 -Raw
-        $renderedContent | Should -Match ([regex]::Escape('# gpipe test: powershell-completions'))
+        $renderedContent | Should -Not -Match 'Install-Completion'
     }
 
     It 'pre-install-hook sentinel is present in file' {
@@ -369,11 +367,5 @@ Describe 'install_rendered.ps1: hook and completion injection' {
     It 'post-hook content is injected' {
         $renderedContent = Get-Content $script:RenderedPs1 -Raw
         $renderedContent | Should -Match ([regex]::Escape('Write-Host "gpipe-fixture-post-hook"'))
-    }
-
-    It 'Install-Completion function is defined after dot-sourcing' {
-        . $script:RenderedPs1
-        Get-Command Install-Completion -ErrorAction SilentlyContinue |
-            Should -Not -BeNullOrEmpty
     }
 }

@@ -2,30 +2,25 @@
 
 ![Build Status](https://img.shields.io/github/actions/workflow/status/thomaslaurenson/gpipe/tag.yml?style=flat&logo=github) ![Test Status](https://img.shields.io/github/actions/workflow/status/thomaslaurenson/gpipe/tag.yml?style=flat&label=test&logo=github)
 
-![Release Version](https://img.shields.io/github/v/release/thomaslaurenson/gpipe?style=flat&logo=github) ![Release downloads](https://img.shields.io/github/downloads/thomaslaurenson/gpipe/total?label=downloads&logo=github)
+![Release Version](https://img.shields.io/github/v/release/thomaslaurenson/gpipe?style=flat&logo=github) ![Release Downloads](https://img.shields.io/github/downloads/thomaslaurenson/gpipe/total?label=downloads&logo=github)
 
-![Go Version](https://img.shields.io/github/go-mod/go-version/thomaslaurenson/gpipe?logo=go) ![Code Coverage](https://img.shields.io/badge/Coverage-73.0%25-blue?logo=go)
+![Go Version](https://img.shields.io/github/go-mod/go-version/thomaslaurenson/gpipe?logo=go) ![Code Coverage](https://img.shields.io/badge/Coverage-75.1%25-blue?logo=go)
 
-Automated, cross-platform, language-agnostic installer script generation for GitHub binary releases.
+Generates `install.sh`, `install.ps1`, and `checksums.txt` for GitHub binary releases, so a project can be installed with `curl | bash`. Language-agnostic: it only needs built binaries on disk, whatever produced them.
 
-`gpipe` generates `install.sh`, `install.ps1`, and `checksums.txt` from embedded templates, injecting project-specific configuration and SHA256 checksums at generation time. Designed for **single raw binary distribution** via `curl | bash`. Language-agnostic — works with Go, C++, Rust, or any toolchain that produces binaries.
+The generated installers detect the platform, download the release asset, verify its cosign signature and SHA-256, and install the binary.
 
-## Quick Start
+## Quick start
+
+Add `.gpipe.yml` to the repo root, listing each platform's built binary and its release asset name:
 
 ```yaml
-# .gpipe.yml
 binary: mycli
 
 platforms:
   linux_amd64:
     path: ./dist/mycli-linux-x86_64
     name: mycli-linux-x86_64
-  linux_arm64:
-    path: ./dist/mycli-linux-aarch64
-    name: mycli-linux-aarch64
-  darwin_amd64:
-    path: ./dist/mycli-darwin-x86_64
-    name: mycli-darwin-x86_64
   darwin_arm64:
     path: ./dist/mycli-darwin-aarch64
     name: mycli-darwin-aarch64
@@ -34,139 +29,55 @@ platforms:
     name: mycli-windows-x86_64.exe
 ```
 
-```bash
-gpipe generate --repo owner/mycli --version v1.2.3
-```
-
-Outputs `install.sh`, `install.ps1`, and `checksums.txt` in the current directory.
-
-## Installation
-
-```bash
-curl -fsSL https://github.com/thomaslaurenson/gpipe/releases/latest/download/install.sh | bash
-```
-
-Or download a binary directly from the [releases page](https://github.com/thomaslaurenson/gpipe/releases).
-
-## `.gpipe.yml` Reference
+Then build, run gpipe, and create the release:
 
 ```yaml
-binary: mycli              # required: canonical binary name used in the generated scripts
-install-name: mycli        # optional: name written to disk after install (defaults to binary)
-sign: false                # optional: run cosign keyless signing on generated checksums.txt
+name: Release
 
-platforms:                 # required: map of platform identifier to path/name entry
-  linux_amd64:
-    path: ./dist/mycli-linux-x86_64      # local path to the built binary
-    name: mycli-linux-x86_64             # GitHub release asset filename
-  linux_arm64:
-    path: ./dist/mycli-linux-aarch64
-    name: mycli-linux-aarch64
-  darwin_amd64:
-    path: ./dist/mycli-darwin-x86_64
-    name: mycli-darwin-x86_64
-  darwin_arm64:
-    path: ./dist/mycli-darwin-aarch64
-    name: mycli-darwin-aarch64
-  windows_amd64:
-    path: ./dist/mycli-windows-x86_64.exe
-    name: mycli-windows-x86_64.exe
-  windows_arm64:
-    path: ./dist/mycli-windows-aarch64.exe
-    name: mycli-windows-aarch64.exe
+on:
+  push:
+    tags: ['v*']
 
-hooks:
-  pre-sh:   .gpipe/pre-install.sh    # injected before download in install.sh
-  post-sh:  .gpipe/post-install.sh   # injected after install in install.sh
-  pre-ps1:  .gpipe/pre-install.ps1   # injected before download in install.ps1
-  post-ps1: .gpipe/post-install.ps1  # injected after install in install.ps1
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write  # only needed for cosign_sign
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-completions:
-  bash:        false   # default
-  zsh:         false   # default
-  fish:        false   # default
-  powershell:  false   # default
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build binaries
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: "~> v2"
+          args: build --clean
+        env:
+          GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
+
+      - uses: thomaslaurenson/gpipe@v1
+        with:
+          cosign_sign: true
+
+      - name: Create release
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            dist/mycli-* \
+            install.sh install.ps1 \
+            checksums.txt checksums.txt.sigstore.json
+        env:
+          GH_TOKEN: ${{ github.token }}
 ```
 
-> **Note:** `repo` and `version` are runtime-only inputs. They are always supplied via `--repo` and `--version` flags (or auto-detected from git). They are never read from `.gpipe.yml`.
+The pattern is **build -> gpipe -> release** for any toolchain; only the build step changes for CMake, Cargo, or plain `make`.
 
-## CLI Reference
-
-```
-gpipe generate   --repo <owner/repo> --version <vX.Y.Z> [--sign] [--dry-run]
-gpipe validate   [--repo <owner/repo>] [--version <vX.Y.Z>]
-gpipe platforms  # list supported platform identifiers
-gpipe version    # print gpipe version
-```
-
-`--repo` and `--version` are required for `generate`. If not supplied as flags, they are auto-detected from the git remote origin URL and the nearest git tag respectively. Detection prints what was found so you can verify it.
-
-## Installer Drift
-
-Every generated script records the gpipe version that produced it:
-
-```sh
-# Release-Version: v0.2.5     <- the version this script installs
-# Gpipe-Version: v1.2.0       <- the gpipe that generated the script
-```
-
-The two are unrelated, and keeping them distinct is the point: `Release-Version` tells you what the installer fetches, `Gpipe-Version` tells you how old the installer's own logic is.
-
-A published release is immutable — `checksums.txt` covers `install.sh` and `install.ps1`, and its cosign signature is [bound to the release tag](#verifying-installsh--installps1) — so an installer improvement in a new gpipe **cannot** be backported onto releases already out. It reaches a project the next time that project cuts any release, because the release workflow re-generates the scripts.
-
-In practice this matters less than it sounds, since projects tell users to install from `releases/latest/download/install.sh`, which always resolves to the newest release. The risk is a project that has not released in a long time.
-
-To check what a project is currently shipping, read the stamp off its published installer:
-
-```bash
-curl -fsSL https://github.com/<owner>/<repo>/releases/latest/download/install.sh \
-  | grep '^# Gpipe-Version:'
-```
-
-If that is behind the current gpipe, cut any release of the project to refresh it. An installer with no `Gpipe-Version` line at all predates stamping, and is therefore older than any stamped one.
-
-## Platform Matrix
-
-| OS      | Arch  | Identifier      |
-|---------|-------|-----------------|
-| Linux   | x86_64 | `linux_amd64`  |
-| Linux   | ARM64  | `linux_arm64`  |
-| macOS   | x86_64 | `darwin_amd64` |
-| macOS   | ARM64  | `darwin_arm64` |
-| Windows | x86_64 | `windows_amd64`|
-| Windows | ARM64  | `windows_arm64`|
-
-## Release Workflow Examples
-
-gpipe fits into any build pipeline. The pattern is always: **build → gpipe → release**.
-
-### GoReleaser (Go projects)
-
-Use `goreleaser build` (not `release`) to produce binaries without touching GitHub, then let gpipe and `gh` handle the rest.
-
-```yaml
-- name: Build binaries
-  uses: goreleaser/goreleaser-action@v7
-  with:
-    version: "~> v2"
-    args: build --clean
-  env:
-    GORELEASER_CURRENT_TAG: ${{ github.ref_name }}
-
-- uses: thomaslaurenson/gpipe-action@v1
-  with:
-    cosign_sign: true
-
-- name: Create release
-  run: |
-    gh release create "${{ github.ref_name }}" \
-      dist/mycli-* install.sh install.ps1 \
-      checksums.txt checksums.txt.sigstore.json
-  env:
-    GH_TOKEN: ${{ github.token }}
-```
-
-Recommended `.goreleaser.yml` for this pattern — named binaries in the dist root, no subdirectories:
+For Go projects, this `.goreleaser.yml` puts named binaries in the dist root so the paths map straight into `.gpipe.yml`:
 
 ```yaml
 builds:
@@ -179,112 +90,76 @@ builds:
     goarch: [amd64, arm64]
 ```
 
-This produces `dist/mycli-linux-x86_64`, `dist/mycli-darwin-aarch64`, `dist/mycli-windows-x86_64.exe`, etc. — paths that map directly to `.gpipe.yml` without translation.
+## Configuration
 
-### CMake (C++ projects)
+`.gpipe.yml` has three keys. `path` is the local build output, `name` is the release asset filename:
 
 ```yaml
-- name: Build binaries
-  run: |
-    cmake -B build -DCMAKE_BUILD_TYPE=Release
-    cmake --build build --config Release
+binary: mycli              # required: binary name, also the name written to disk
 
-- uses: thomaslaurenson/gpipe-action@v1
-  with:
-    cosign_sign: true
+platforms:                 # required: at least one
+  linux_amd64:             # linux_amd64, linux_arm64, darwin_amd64,
+    path: ./dist/mycli-linux-x86_64    # darwin_arm64, windows_amd64, windows_arm64
+    name: mycli-linux-x86_64
 
-- name: Create release
-  run: |
-    gh release create "${{ github.ref_name }}" \
-      build/mycli-* install.sh install.ps1 \
-      checksums.txt checksums.txt.sigstore.json
-  env:
-    GH_TOKEN: ${{ github.token }}
+hooks:                     # optional
+  pre-sh:   .gpipe/pre-install.sh    # before download in install.sh
+  post-sh:  .gpipe/post-install.sh   # after install in install.sh
+  pre-ps1:  .gpipe/pre-install.ps1   # before download in install.ps1
+  post-ps1: .gpipe/post-install.ps1  # after install in install.ps1
 ```
 
-The `.gpipe.yml` `path` entries point to wherever CMake places your built binaries. A common pattern is staging them into a consistent output directory as a post-build step.
+Each generated script carries only the platforms it can install, so `install.sh` never gets a `windows_*` branch. `repo` and `version` are runtime-only and come from flags or git, never from this file. Unknown keys are a parse error rather than being ignored.
 
-## Hook Authoring
+## Action inputs
 
-Hooks are shell snippets injected verbatim into the generated install scripts. Place them in a `.gpipe/` directory:
+| Input | Default | Description |
+|---|---|---|
+| `version` | `${{ github.ref_name }}` | Release version tag |
+| `repo` | `${{ github.repository }}` | `owner/repo` |
+| `config` | `.gpipe.yml` | Config path relative to repo root |
+| `cosign_sign` | `false` | Sign `checksums.txt`; needs `id-token: write` |
 
+The action builds gpipe from its own checkout, so `@v1` gets the latest v1.x and `@v1.4.0` pins exactly. It needs Go on the runner, which GitHub-hosted runners provide.
+
+## CLI
+
+```text
+gpipe generate  --repo <owner/repo> --version <vX.Y.Z> [--config <path>] [--sign] [--dry-run]
+gpipe validate  [--repo <owner/repo>] [--version <vX.Y.Z>] [--config <path>]
+gpipe version
 ```
-.gpipe/
-  pre-install.sh
-  post-install.sh
-  pre-install.ps1
-  post-install.ps1
-```
 
-**Available variables in hooks:**
+Install it with `curl -fsSL https://github.com/thomaslaurenson/gpipe/releases/latest/download/install.sh | bash`, or grab a binary from the [releases page](https://github.com/thomaslaurenson/gpipe/releases).
+
+`--repo` and `--version` fall back to the git remote and `git describe --tags`, printing what they detected. `validate` checks the config without generating; `--dry-run` generates without needing every binary present.
+
+`checksums.txt` covers `install.sh` and `install.ps1` themselves and is cosign-signed, so an installer can be verified before it is run. The generated `install.sh` carries the exact `cosign verify-blob` invocation, identity regexp included, in its `verify_signature` function.
+
+## Hooks
+
+Hook files are injected verbatim into the generated scripts. Available variables:
 
 | Variable | Available in | Description |
 |---|---|---|
-| `GITHUB_REPO` / `$GithubRepo` | pre + post | `owner/repo` |
-| `VERSION` / `$Version` | pre + post | release version tag |
-| `BINARY` / `$Binary` | pre + post | canonical binary name |
-| `INSTALL_NAME` / `$InstallName` | pre + post | name written to disk |
-| `INSTALL_DIR` / `$InstallDir` | post only | directory binary was installed to |
+| `GITHUB_REPO` / `$script:GithubRepo` | pre, post | `owner/repo` |
+| `VERSION` / `$script:Version` | pre, post | release version tag |
+| `BINARY` / `$script:Binary` | pre, post | binary name |
+| `INSTALL_DIR` / `$installDir` | post | where the binary was installed |
 
-**Important notes for hook authors:**
-- Bash hooks are validated with `bash -n` before generation
-- PowerShell hooks are validated with the PowerShell language parser before generation, when `pwsh` is available on the machine running `gpipe generate`; otherwise the check is skipped with a warning
-- Bash hooks run in a subshell — `set -euo pipefail` is inherited. Any non-zero exit aborts the install
-- PowerShell hooks run inside `& { }` — `$ErrorActionPreference = "Stop"` is active. Any terminating error aborts the install
-- A temp directory already exists by the time pre-install hooks run, in both install.sh and install.ps1
-- Hooks are wrapped in delimited comment blocks in the generated output for easy identification
+Two things to know when writing one:
 
-## Shell Completions
+- Bash hooks run in a subshell inheriting `set -euo pipefail`, and PowerShell hooks inside `& { }` with `$ErrorActionPreference = 'Stop'`. Anything optional needs guarding, or a failure aborts the install after the binary is already placed. Use `exit 0` to leave the hook without stopping the installer.
+- The `ok`, `info`, `warn`, and `error` helpers are in scope, so hook output matches the installer's `[LEVEL]` formatting.
 
-Enable per-shell completions in `.gpipe.yml`. The generated script runs `{binary} completion {shell}` after install and writes the output to the appropriate location. If the binary does not support the completion subcommand the install continues with a warning.
+Syntax is checked before generation with `bash -n` and the PowerShell parser, the latter only when `pwsh` is available.
 
-## Verifying install.sh / install.ps1
-
-`checksums.txt` includes SHA-256 entries for `install.sh` and `install.ps1` themselves, not just the platform binaries. This lets a cautious user verify the installer script before running it, instead of piping straight to a shell:
+## Local development
 
 ```bash
-curl -fsSLO https://github.com/<owner>/<repo>/releases/download/<version>/install.sh
-curl -fsSLO https://github.com/<owner>/<repo>/releases/download/<version>/checksums.txt
-curl -fsSLO https://github.com/<owner>/<repo>/releases/download/<version>/checksums.txt.sigstore.json
-
-cosign verify-blob \
-  --bundle checksums.txt.sigstore.json \
-  --certificate-identity-regexp='^https://github\.com/<owner>/<repo>/\.github/workflows/.+@refs/tags/<version>$' \
-  --certificate-oidc-issuer='https://token.actions.githubusercontent.com' \
-  checksums.txt
-
-sha256sum -c <(grep install.sh checksums.txt)
-
-# inspect install.sh, then run it
-bash install.sh
+make build   # build to bin/gpipe
+make ci      # fmt, vet, lint, and the full test suite
+make help    # everything else
 ```
 
-## Local Testing
-
-```bash
-# Validate config and hooks without generating files
-gpipe validate
-
-# Full generation without requiring all binaries to be present
-gpipe generate --dry-run
-
-# Verify goreleaser output structure before pushing a tag
-goreleaser build --snapshot --clean
-ls dist/
-```
-
-The bash test suite (`make test_bash`) uses [bats-core](https://github.com/bats-core/bats-core) via a git submodule. On a fresh clone, initialise it first:
-
-```bash
-git submodule update --init --recursive
-```
-
-If `--repo` and `--version` are not supplied, they are auto-detected from the local git state:
-- `repo` is parsed from `git remote get-url origin`
-- `version` is derived from `git describe --tags`, with `-dev` appended if not on an exact tag
-
-Detection output is always printed so you can confirm the values before scripts are generated.
-
-## gpipe-action
-
-See [`gpipe-action`](https://github.com/thomaslaurenson/gpipe-action) for the composite GitHub Action that wraps this tool for use in release workflows.
+Tests are Go plus [bats-core](https://github.com/bats-core/bats-core) for `install.sh` and Pester for `install.ps1`. bats is a submodule, so a fresh clone needs `git submodule update --init --recursive`. The PowerShell targets need `pwsh` with Pester 5+ and PSScriptAnalyzer.

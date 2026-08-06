@@ -54,12 +54,21 @@ lint_bash: generate_test_fixtures ## Run shellcheck on the rendered install.sh f
 	  || { printf 'fail\n'; exit 1; }
 
 .PHONY: lint_ps
-lint_ps: generate_test_fixtures ## Run PSScriptAnalyzer on the rendered install.ps1 fixture (requires pwsh)
+lint_ps: generate_test_fixtures ## Run PSScriptAnalyzer on the rendered install.ps1
 	@printf 'PSScriptAnalyzer  test/fixtures/install_rendered.ps1 ... '
 	@pwsh -NoProfile -NonInteractive -Command \
-	  "Import-Module PSScriptAnalyzer; \$$r = Invoke-ScriptAnalyzer -Path 'test/fixtures/install_rendered.ps1' -Severity Warning,Error -ExcludeRule 'PSAvoidUsingWriteHost','PSUseShouldProcessForStateChangingFunctions'; if (\$$r) { \$$r | Format-Table -AutoSize; exit 1 }" \
+	  "Import-Module PSScriptAnalyzer; \
+	   \$$r = Invoke-ScriptAnalyzer -Path 'test/fixtures/install_rendered.ps1' \
+	     -Severity Warning,Error \
+	     -ExcludeRule 'PSAvoidUsingWriteHost','PSUseShouldProcessForStateChangingFunctions'; \
+	   if (\$$r) { \$$r | Format-Table -AutoSize; exit 1 }" \
 	  && printf 'ok\n' \
 	  || { printf 'fail\n'; exit 1; }
+
+# The binary embeds templates/, so "validate the embedded content" means
+# rendering it and running the real shell linters over the result.
+.PHONY: check
+check: lint_bash lint_ps ## Validate the embedded install templates
 
 # TEST
 .PHONY: generate_test_fixtures
@@ -93,21 +102,28 @@ test_bash_verbose: generate_test_fixtures ## Run bats tests with verbose output
 	test/extern/bats/bin/bats --verbose-run test/install_sh.bats
 
 .PHONY: test_ps
-test_ps: generate_test_fixtures ## Run Pester tests for install.ps1 template (requires pwsh + Pester >= 5.0)
+test_ps: generate_test_fixtures ## Run Pester tests for install.ps1 (needs pwsh + Pester 5)
 	pwsh -NoProfile -NonInteractive -Command \
-	  "Import-Module Pester -MinimumVersion 5.0; \$$cfg = New-PesterConfiguration; \$$cfg.Run.Path = 'test/install_ps1.Tests.ps1'; \$$cfg.Output.Verbosity = 'Detailed'; \$$cfg.Run.Exit = \$$true; Invoke-Pester -Configuration \$$cfg"
+	  "Import-Module Pester -MinimumVersion 5.0; \
+	   \$$cfg = New-PesterConfiguration; \
+	   \$$cfg.Run.Path = 'test/install_ps1.Tests.ps1'; \
+	   \$$cfg.Output.Verbosity = 'Detailed'; \
+	   \$$cfg.Run.Exit = \$$true; \
+	   Invoke-Pester -Configuration \$$cfg"
 
 .PHONY: test_ps_verbose
 test_ps_verbose: generate_test_fixtures ## Run Pester tests with diagnostic output
 	pwsh -NoProfile -NonInteractive -Command \
-	  "Import-Module Pester -MinimumVersion 5.0; \$$cfg = New-PesterConfiguration; \$$cfg.Run.Path = 'test/install_ps1.Tests.ps1'; \$$cfg.Output.Verbosity = 'Diagnostic'; \$$cfg.Run.Exit = \$$true; Invoke-Pester -Configuration \$$cfg"
-
-.PHONY: ci
-ci: fmt_check mod_check vet lint_bash lint_ps test ## Run all CI checks locally
+	  "Import-Module Pester -MinimumVersion 5.0; \
+	   \$$cfg = New-PesterConfiguration; \
+	   \$$cfg.Run.Path = 'test/install_ps1.Tests.ps1'; \
+	   \$$cfg.Output.Verbosity = 'Diagnostic'; \
+	   \$$cfg.Run.Exit = \$$true; \
+	   Invoke-Pester -Configuration \$$cfg"
 
 # GET
 .PHONY: get_changelog
-get_changelog: ## Print release notes for TAG to stdout (default: latest tag; override with TAG=v1.0.0)
+get_changelog: ## Print release notes for TAG to stdout (default: latest tag)
 	@tag="$(TAG)"; tag="$${tag#v}"; \
 	if [[ -z "$$tag" ]]; then \
 	  printf 'get_changelog: TAG is empty; pass TAG=v1.0.0 or create a git tag\n' >&2; \
@@ -137,6 +153,9 @@ release_check: ## Validate goreleaser config
 	goreleaser check
 
 # TASKS
+.PHONY: ci
+ci: fmt_check mod_check vet check test ## Run all CI checks locally
+
 .PHONY: clean
 clean: ## Remove build artifacts
 	rm -rf bin/ dist/ install.sh install.ps1 checksums.txt

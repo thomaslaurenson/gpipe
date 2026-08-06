@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.4.0 - 2026-08-06
+
+### Added
+
+- Ship the GitHub Action from this repository, replacing gpipe-action
+
+### Changed
+
+- Print errors once instead of twice, without a usage dump
+- Report the install directory instead of editing shell profiles
+
+### Fixed
+
+- Detect a shadowing binary on PATH for user installs, not just system installs
+- Stop treating a failed release lookup as no release in the prerelease workflow
+- Run CI for changes to the installer templates
+
+### Removed
+
+- Remove the install-name, sign, and completions config keys
+- Remove the platforms subcommand and the binary and install-name flags
+- Remove shell completion installation from the generated installers
+- Remove the version pin and sync machinery the separate action repository needed
+
 ## 1.3.0 - 2026-08-02
 
 ### Added

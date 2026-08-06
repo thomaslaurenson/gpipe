@@ -20,10 +20,24 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # Three outcomes, three behaviours: the release exists, so delete it; gh
+      # reports it missing, so carry on; gh failed for any other reason, so
+      # stop. Collapsing the third into the second would let a rate limit or an
+      # auth failure look like "no release exists", and the job would then
+      # publish on top of a release whose state it never established.
+      #
+      # `2>&1 >/dev/null` captures stderr while discarding stdout, and the order
+      # matters: redirections apply left to right, so stderr is pointed at the
+      # still-open capture before stdout goes to /dev/null.
       - name: Delete any existing dev release
         run: |
-          if gh release view "dev" > /dev/null 2>&1; then
+          if err=$(gh release view "dev" 2>&1 >/dev/null); then
             gh release delete "dev" --yes --cleanup-tag
+          elif grep -qi "release not found" <<<"$err"; then
+            echo "No existing dev release"
+          else
+            echo "::error::could not determine whether a dev release exists: ${err}"
+            exit 1
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

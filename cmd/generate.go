@@ -21,23 +21,19 @@ from the git remote origin URL and the nearest git tag respectively.`,
 }
 
 var generateFlags struct {
-	repo        string
-	version     string
-	configPath  string
-	binary      string
-	installName string
-	dryRun      bool
-	sign        bool
+	repo       string
+	version    string
+	configPath string
+	dryRun     bool
+	sign       bool
 }
 
 func init() {
 	generateCmd.Flags().StringVar(&generateFlags.repo, "repo", "", "GitHub repo in owner/repo format (auto-detected from git remote if not set)")
 	generateCmd.Flags().StringVar(&generateFlags.version, "version", "", "Release version tag, e.g. v1.2.3 (auto-detected from git tags if not set)")
 	generateCmd.Flags().StringVar(&generateFlags.configPath, "config", ".gpipe.yml", "Path to config file")
-	generateCmd.Flags().StringVar(&generateFlags.binary, "binary", "", "Binary name (overrides config)")
-	generateCmd.Flags().StringVar(&generateFlags.installName, "install-name", "", "Installed binary name on disk (overrides config)")
 	generateCmd.Flags().BoolVar(&generateFlags.dryRun, "dry-run", false, "Generate scripts without requiring all binaries to be present")
-	generateCmd.Flags().BoolVar(&generateFlags.sign, "sign", false, "Sign checksums.txt with cosign after generation (overrides config)")
+	generateCmd.Flags().BoolVar(&generateFlags.sign, "sign", false, "Sign checksums.txt with cosign after generation")
 }
 
 func runGenerate(cmd *cobra.Command, args []string) error {
@@ -46,17 +42,9 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	var signFlag *bool
-	if cmd.Flags().Changed("sign") {
-		signFlag = &generateFlags.sign
-	}
-
 	gpipe.MergeFlags(cfg, gpipe.FlagValues{
-		GithubRepo:  generateFlags.repo,
-		Version:     generateFlags.version,
-		Binary:      generateFlags.binary,
-		InstallName: generateFlags.installName,
-		Sign:        signFlag,
+		GithubRepo: generateFlags.repo,
+		Version:    generateFlags.version,
 	})
 
 	cfg.GpipeVersion = Version
@@ -105,7 +93,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("writing checksums.txt: %w", err)
 	}
 
-	if cfg.Sign {
+	if generateFlags.sign {
 		if err := gpipe.SignChecksums("checksums.txt"); err != nil {
 			return err
 		}

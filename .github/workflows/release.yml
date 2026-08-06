@@ -13,6 +13,11 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-24.04
+    # Serialize releases so two tag pushes cannot race on the force-pushed
+    # major-version tag below.
+    concurrency:
+      group: release-major-tag
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
         with:
@@ -57,21 +62,23 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Optional fast path; gpipe-action's daily schedule covers the same
-      # ground. Needs a PAT because GITHUB_TOKEN cannot dispatch cross-repo,
-      # and the token is checked in-script because the secrets context is not
-      # available in step conditionals.
-      - name: Notify gpipe-action of the new release
+      # This repository is also the action, so consumers write
+      # `uses: thomaslaurenson/gpipe@v1`. That ref has to exist and has to
+      # follow releases, otherwise every consumer pinned to the major line
+      # fails to resolve the action at all. Moved after the release is
+      # published so the tag never points at a build that did not ship.
+      - name: Move floating major-version tag
         env:
-          GH_TOKEN: ${{ secrets.GPIPE_ACTION_DISPATCH_TOKEN }}
+          # Read the pushed tag from the environment rather than interpolating
+          # ${{ }} into the script, so a crafted tag name cannot inject shell.
           TAG: ${{ github.ref_name }}
         run: |
-          if [[ -z "${GH_TOKEN:-}" ]]; then
-            echo "GPIPE_ACTION_DISPATCH_TOKEN not set: skipping dispatch."
-            echo "gpipe-action will pick up ${TAG} on its next scheduled sync."
-            exit 0
+          # Derive the major tag from the release tag (v1.4.0 -> v1) so that
+          # v2+ releases move the correct tag instead of always moving v1.
+          major="${TAG%%.*}"
+          if [[ ! "$major" =~ ^v[0-9]+$ ]]; then
+            echo "Refusing to move major tag: unexpected tag name '$TAG'" >&2
+            exit 1
           fi
-          gh api "repos/${GITHUB_REPOSITORY_OWNER}/gpipe-action/dispatches" \
-            --method POST \
-            --field event_type=gpipe-released \
-            --field "client_payload[version]=${TAG}"
+          git tag -f "$major"
+          git push origin "$major" --force
