@@ -5,12 +5,12 @@
 //
 // It produces:
 //
-//   - install_rendered.sh / install_rendered.ps1 — rendered from a config with
-//     every shell completion enabled and pre/post hooks injected from
-//     test/fixtures/hooks/. The suites both call individual functions from these
-//     files and grep them for the completion and hook sentinels.
+//   - install_rendered.sh / install_rendered.ps1, rendered from a config with
+//     pre/post hooks injected from test/fixtures/hooks/. The suites both call
+//     individual functions from these files and grep them for the hook
+//     sentinels.
 //
-//   - checksums.txt (and the fake_binary it covers) — used by the checksum
+//   - checksums.txt (and the fake_binary it covers), used by the checksum
 //     verification tests.
 //
 // Fake binaries (fake_binary_go, fake_binary) are written as needed so checksum
@@ -73,8 +73,8 @@ func main() {
 	fmt.Println("fixtures up to date")
 }
 
-// generateFull renders the install scripts with all completions and pre/post
-// hooks sourced from test/fixtures/hooks/.
+// generateFull renders the install scripts with pre/post hooks sourced from
+// test/fixtures/hooks/.
 func generateFull(fixtureDir, repoRoot string, platforms map[string]gpipe.PlatformEntry, tplFS fs.FS) error {
 	hooksDir := filepath.Join(repoRoot, "test", "fixtures", "hooks")
 
@@ -84,14 +84,7 @@ func generateFull(fixtureDir, repoRoot string, platforms map[string]gpipe.Platfo
 		// Pinned so fixtures do not churn as `git describe` output changes.
 		GpipeVersion: "v0.0.0-fixture",
 		Binary:       "mytool",
-		InstallName:  "mytool",
 		Platforms:    platforms,
-		Completions: gpipe.Completions{
-			Bash:       true,
-			Zsh:        true,
-			Fish:       true,
-			PowerShell: true,
-		},
 		Hooks: gpipe.Hooks{
 			PreSh:   filepath.Join(hooksDir, "pre_install.sh"),
 			PostSh:  filepath.Join(hooksDir, "post_install.sh"),
@@ -124,7 +117,6 @@ func generateChecksums(fixtureDir string, tplFS fs.FS) error {
 		// Pinned so fixtures do not churn as `git describe` output changes.
 		GpipeVersion: "v0.0.0-fixture",
 		Binary:       "mytool",
-		InstallName:  "mytool",
 		Platforms: map[string]gpipe.PlatformEntry{
 			"linux_amd64": {Path: checksumsFixture, Name: "fake_binary"},
 		},

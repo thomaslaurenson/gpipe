@@ -3,6 +3,7 @@ package gpipe
 import (
 	"bytes"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -11,6 +12,20 @@ import (
 	"regexp"
 	"strings"
 	"text/template"
+)
+
+// Sentinel errors for the failure modes a caller can act on. Each is wrapped
+// with %w at the point of failure, so callers match with errors.Is rather than
+// on message text.
+var (
+	// ErrBashSyntax reports a hook rejected by bash -n.
+	ErrBashSyntax = errors.New("bash syntax error in hook")
+	// ErrPs1Syntax reports a hook rejected by the PowerShell parser.
+	ErrPs1Syntax = errors.New("powershell syntax error in hook")
+	// ErrCosignNotFound reports that cosign is not installed.
+	ErrCosignNotFound = errors.New("cosign not found in PATH")
+	// ErrCosignSign reports that cosign ran but failed to sign.
+	ErrCosignSign = errors.New("cosign sign-blob failed")
 )
 
 // Output holds the three generated file contents.
@@ -28,8 +43,6 @@ type templateData struct {
 	Version      string
 	GpipeVersion string
 	Binary       string
-	InstallName  string
-	Completions  Completions
 	// ShPlatforms and Ps1Platforms are disjoint subsets of the configured
 	// platforms, split by OS so install.sh never carries an unreachable
 	// windows_* case arm (and vice versa for install.ps1).
@@ -91,7 +104,8 @@ type hookContent struct {
 // Release-Version, so the v is added back here.
 //
 // Only versions starting with a digit are prefixed, leaving non-tag values
-// ("dev" from a plain go build, "unknown" below) as they are.
+// ("dev" from a plain go build, "unknown" below, or the already-prefixed output
+// of git describe) as they are.
 func stampVersion(version string) string {
 	if version == "" {
 		return "unknown"
@@ -154,8 +168,6 @@ func Generate(cfg *Config, tplFS fs.FS, mode ValidationMode) (*Output, error) {
 		Version:            cfg.Version,
 		GpipeVersion:       gpipeVersion,
 		Binary:             cfg.Binary,
-		InstallName:        cfg.InstallName,
-		Completions:        cfg.Completions,
 		ShPlatforms:        shPlatforms,
 		Ps1Platforms:       ps1Platforms,
 		CosignCertIdentity: cosignCertIdentity(cfg.GithubRepo, cfg.Version),
@@ -269,7 +281,7 @@ func validateBashSyntax(path string) error {
 	}
 	out, err := exec.Command(bash, "-n", path).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("bash syntax error in hook %q:\n%s", path, bytes.TrimSpace(out))
+		return fmt.Errorf("%w %q:\n%s", ErrBashSyntax, path, bytes.TrimSpace(out))
 	}
 	return nil
 }
@@ -303,7 +315,7 @@ func validatePs1Syntax(path string) error {
 	cmd.Env = append(os.Environ(), "GPIPE_HOOK_PATH="+path)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("powershell syntax error in hook %q:\n%s", path, bytes.TrimSpace(out))
+		return fmt.Errorf("%w %q:\n%s", ErrPs1Syntax, path, bytes.TrimSpace(out))
 	}
 	return nil
 }
@@ -314,12 +326,12 @@ func validatePs1Syntax(path string) error {
 func SignChecksums(path string) error {
 	cosign, err := exec.LookPath("cosign")
 	if err != nil {
-		return fmt.Errorf("cosign not found in PATH: install it from https://docs.sigstore.dev/cosign/system_config/installation/")
+		return fmt.Errorf("%w: install it from https://docs.sigstore.dev/cosign/system_config/installation/", ErrCosignNotFound)
 	}
 	bundle := path + ".sigstore.json"
 	out, err := exec.Command(cosign, "sign-blob", "--yes", "--bundle="+bundle, path).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("cosign sign-blob failed: %w\n%s", err, bytes.TrimSpace(out))
+		return fmt.Errorf("%w: %v\n%s", ErrCosignSign, err, bytes.TrimSpace(out))
 	}
 	return nil
 }

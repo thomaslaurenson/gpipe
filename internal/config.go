@@ -53,10 +53,10 @@ var semverPattern = regexp.MustCompile(`^v?[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9
 // pattern would allow command injection into the emitted scripts.
 var repoPattern = regexp.MustCompile(`^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$`)
 
-// namePattern matches shell-safe identifiers used for the binary name,
-// install-name, and per-platform asset filenames. It permits only letters,
-// digits, '.', '_' and '-' so that these values cannot break out of the
-// quoted strings they are injected into within the generated scripts.
+// namePattern matches shell-safe identifiers used for the binary name and
+// per-platform asset filenames. It permits only letters, digits, '.', '_'
+// and '-' so that these values cannot break out of the quoted strings they
+// are injected into within the generated scripts.
 var namePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // Hooks holds optional hook file paths.
@@ -65,14 +65,6 @@ type Hooks struct {
 	PostSh  string `yaml:"post-sh"`
 	PrePs1  string `yaml:"pre-ps1"`
 	PostPs1 string `yaml:"post-ps1"`
-}
-
-// Completions holds per-shell completion flags.
-type Completions struct {
-	Bash       bool `yaml:"bash"`
-	Zsh        bool `yaml:"zsh"`
-	Fish       bool `yaml:"fish"`
-	PowerShell bool `yaml:"powershell"`
 }
 
 // PlatformEntry holds the local binary path and the GitHub release asset name for a platform.
@@ -85,28 +77,21 @@ type PlatformEntry struct {
 // Note: GithubRepo and Version are runtime-only inputs supplied via CLI flags,
 // never read from the config file.
 type Config struct {
-	Binary      string                   `yaml:"binary"`
-	InstallName string                   `yaml:"install-name"`
-	Platforms   map[string]PlatformEntry `yaml:"platforms"`
-	Hooks       Hooks                    `yaml:"hooks"`
-	Completions Completions              `yaml:"completions"`
-	Sign        bool                     `yaml:"sign"`
+	Binary    string                   `yaml:"binary"`
+	Platforms map[string]PlatformEntry `yaml:"platforms"`
+	Hooks     Hooks                    `yaml:"hooks"`
 	// Runtime-only: not read from config file, always supplied via flags or auto-detected.
 	GithubRepo string
 	Version    string
 	// GpipeVersion is the gpipe version doing the generating, stamped into the
-	// generated scripts. Accepted in the CLI's unprefixed form and v-prefixed
-	// for the header by stampVersion. Defaults to "unknown" when unset.
+	// generated scripts. Defaults to "unknown" when unset.
 	GpipeVersion string
 }
 
 // FlagValues holds CLI flag overrides.
 type FlagValues struct {
-	GithubRepo  string
-	Version     string
-	Binary      string
-	InstallName string
-	Sign        *bool
+	GithubRepo string
+	Version    string
 }
 
 // LoadConfig reads and parses a .gpipe.yml file.
@@ -138,26 +123,12 @@ func LoadConfig(path string) (*Config, error) {
 }
 
 // MergeFlags applies CLI flag overrides on top of a loaded config.
-//
-// install-name defaults to binary if neither is set via flag or config.
 func MergeFlags(cfg *Config, flags FlagValues) {
 	if flags.GithubRepo != "" {
 		cfg.GithubRepo = flags.GithubRepo
 	}
 	if flags.Version != "" {
 		cfg.Version = flags.Version
-	}
-	if flags.Binary != "" {
-		cfg.Binary = flags.Binary
-	}
-	if flags.InstallName != "" {
-		cfg.InstallName = flags.InstallName
-	}
-	if flags.Sign != nil {
-		cfg.Sign = *flags.Sign
-	}
-	if cfg.InstallName == "" {
-		cfg.InstallName = cfg.Binary
 	}
 }
 
@@ -307,10 +278,6 @@ func Validate(cfg *Config, mode ValidationMode) []error {
 		errs = append(errs, errors.New("missing required config field: binary"))
 	} else if !namePattern.MatchString(cfg.Binary) {
 		errs = append(errs, fmt.Errorf("invalid binary %q: allowed characters are letters, digits, '.', '_' and '-'", cfg.Binary))
-	}
-
-	if cfg.InstallName != "" && !namePattern.MatchString(cfg.InstallName) {
-		errs = append(errs, fmt.Errorf("invalid install-name %q: allowed characters are letters, digits, '.', '_' and '-'", cfg.InstallName))
 	}
 
 	if len(cfg.Platforms) == 0 {
