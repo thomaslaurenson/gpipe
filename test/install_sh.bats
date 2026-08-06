@@ -12,10 +12,11 @@ bats_require_minimum_version 1.7.0
 #
 # Sources the rendered install.sh fixture so all functions are available.
 # Places mock executables first on PATH to intercept curl, uname, cosign.
-# Uses BATS_TEST_TMPDIR as HOME to keep RC file writes isolated.
+# Uses BATS_TEST_TMPDIR as HOME so any stray write to a dotfile is contained
+# and visible to the tests that assert none happens.
 #
 # Globals set:
-#   REPO_ROOT, FIXTURE_DIR, PATH, HOME, INSTALL_NAME, GITHUB_REPO, VERSION,
+#   REPO_ROOT, FIXTURE_DIR, PATH, HOME, GITHUB_REPO, VERSION,
 #   BINARY, USER_INSTALL, NO_VERIFY, INSTALL_DIR, PLATFORM
 setup() {
   REPO_ROOT="$(cd "${BATS_TEST_DIRNAME}/.." && pwd)"
@@ -23,7 +24,7 @@ setup() {
 
   export GPIPE_FIXTURE_DIR="${FIXTURE_DIR}"
 
-  # Isolate HOME so RC file writes go to a throwaway directory.
+  # Isolate HOME so any write that escapes goes to a throwaway directory.
   export HOME="${BATS_TEST_TMPDIR}/home"
   mkdir -p "${HOME}"
 
@@ -41,7 +42,7 @@ setup() {
   # shellcheck source=test/fixtures/install_rendered.sh
   source "${FIXTURE_DIR}/install_rendered.sh"
 
-  # Note: GITHUB_REPO, VERSION, BINARY, INSTALL_NAME are readonly after sourcing
+  # Note: GITHUB_REPO, VERSION, BINARY are readonly after sourcing
   USER_INSTALL=false
   NO_VERIFY=false
   INSTALL_DIR=""
@@ -274,54 +275,30 @@ setup() {
 }
 
 # manage_path
+#
+# manage_path reports only. BINARY is readonly after sourcing (it is "mytool"
+# in the fixture), so INSTALL_DIR is pointed at scratch dirs holding a binary
+# of that name.
 
-@test "manage_path: appends export line to .bashrc when not in PATH" {
-  USER_INSTALL=true
-  INSTALL_DIR="${HOME}/.local/bin"
-  touch "${HOME}/.bashrc"
-  export SHELL="/bin/bash"
-  export PATH="${PATH//${INSTALL_DIR}/}"
-  manage_path
-  grep -qF "${INSTALL_DIR}" "${HOME}/.bashrc"
-}
-
-@test "manage_path: does not modify .bashrc when INSTALL_DIR already in PATH" {
-  USER_INSTALL=true
-  INSTALL_DIR="${BATS_TEST_TMPDIR}/already_present"
-  touch "${HOME}/.bashrc"
-  export SHELL="/bin/bash"
+@test "manage_path: silent when the installed binary is what PATH resolves to" {
+  INSTALL_DIR="${BATS_TEST_TMPDIR}/installdir"
+  mkdir -p "${INSTALL_DIR}"
+  cp "${FIXTURE_DIR}/fake_binary" "${INSTALL_DIR}/${BINARY}"
   export PATH="${INSTALL_DIR}:${PATH}"
-  manage_path
-  # File should be empty (untouched).
-  [[ ! -s "${HOME}/.bashrc" ]]
-}
-
-@test "manage_path: skips RC modification for system install" {
-  USER_INSTALL=false
-  # INSTALL_NAME is readonly after sourcing; it is already set to "mytool"
-  touch "${HOME}/.bashrc"
-  # Put a fake binary named after INSTALL_NAME at exactly INSTALL_DIR so the
-  # availability check inside manage_path resolves to it, not just something
-  # of the same name (see the shadowing test below for that case).
-  local tmp_bin="${BATS_TEST_TMPDIR}/sysbin"
-  mkdir -p "${tmp_bin}"
-  cp "${FIXTURE_DIR}/fake_binary" "${tmp_bin}/${INSTALL_NAME}"
-  INSTALL_DIR="${tmp_bin}"
-  export PATH="${tmp_bin}:${PATH}"
-  manage_path
-  [[ ! -s "${HOME}/.bashrc" ]]
+  run manage_path
+  (( status == 0 ))
+  [[ -z "${output}" ]]
 }
 
 @test "manage_path: warns when a different binary shadows INSTALL_DIR on PATH" {
-  USER_INSTALL=false
   INSTALL_DIR="${BATS_TEST_TMPDIR}/realinstalldir"
   mkdir -p "${INSTALL_DIR}"
-  cp "${FIXTURE_DIR}/fake_binary" "${INSTALL_DIR}/${INSTALL_NAME}"
+  cp "${FIXTURE_DIR}/fake_binary" "${INSTALL_DIR}/${BINARY}"
 
   # A different directory earlier in PATH shadows INSTALL_DIR
   local shadow_bin="${BATS_TEST_TMPDIR}/shadowbin"
   mkdir -p "${shadow_bin}"
-  cp "${FIXTURE_DIR}/fake_binary" "${shadow_bin}/${INSTALL_NAME}"
+  cp "${FIXTURE_DIR}/fake_binary" "${shadow_bin}/${BINARY}"
   export PATH="${shadow_bin}:${PATH}:${INSTALL_DIR}"
 
   run manage_path
@@ -329,111 +306,52 @@ setup() {
   [[ "${output}" =~ "resolves to" ]]
 }
 
-@test "manage_path: appends fish_add_path to config.fish for fish shell" {
-  USER_INSTALL=true
-  INSTALL_DIR="${HOME}/.local/bin"
-  export SHELL="/usr/bin/fish"
+@test "manage_path: prints the export line when INSTALL_DIR is not on PATH" {
+  INSTALL_DIR="${BATS_TEST_TMPDIR}/unreachable"
+  mkdir -p "${INSTALL_DIR}"
+  cp "${FIXTURE_DIR}/fake_binary" "${INSTALL_DIR}/${BINARY}"
+  run manage_path
+  (( status == 0 ))
+  [[ "${output}" =~ "is not in PATH" ]]
+  [[ "${output}" =~ "export PATH=" ]]
+}
+
+# The whole point of the v2 trim: report, never edit. A dotfile the user did
+# not ask the installer to touch must come out of a full run untouched.
+@test "manage_path: writes to no shell profile" {
+  INSTALL_DIR="${BATS_TEST_TMPDIR}/unreachable"
+  mkdir -p "${INSTALL_DIR}"
+  cp "${FIXTURE_DIR}/fake_binary" "${INSTALL_DIR}/${BINARY}"
+  touch "${HOME}/.bashrc" "${HOME}/.bash_profile" "${HOME}/.profile" \
+        "${HOME}/.zshrc" "${HOME}/.zprofile"
   mkdir -p "${HOME}/.config/fish"
   touch "${HOME}/.config/fish/config.fish"
-  export PATH="${PATH//${INSTALL_DIR}/}"
-  manage_path
-  grep -qF "fish_add_path" "${HOME}/.config/fish/config.fish"
+
+  for shell in /bin/bash /bin/zsh /usr/bin/fish; do
+    export SHELL="${shell}"
+    manage_path
+  done
+
+  local f
+  for f in "${HOME}/.bashrc" "${HOME}/.bash_profile" "${HOME}/.profile" \
+           "${HOME}/.zshrc" "${HOME}/.zprofile" "${HOME}/.config/fish/config.fish"; do
+    [[ ! -s "${f}" ]] || {
+      printf 'manage_path wrote to %s\n' "${f}" >&2
+      return 1
+    }
+  done
 }
 
-@test "manage_path: zsh writes to only one of .zshrc/.zprofile when both exist" {
-  USER_INSTALL=true
-  INSTALL_DIR="${HOME}/.local/bin"
-  export SHELL="/bin/zsh"
-  touch "${HOME}/.zshrc" "${HOME}/.zprofile"
-  export PATH="${PATH//${INSTALL_DIR}/}"
-  manage_path
-  local hits=0
-  grep -qF "${INSTALL_DIR}" "${HOME}/.zshrc"    && hits=$((hits + 1))
-  grep -qF "${INSTALL_DIR}" "${HOME}/.zprofile" && hits=$((hits + 1))
-  (( hits == 1 ))
+@test "fixture: contains no completion or dotfile-writing logic" {
+  ! grep -qE 'completion|\.bashrc|\.zshrc|\.zfunc|config\.fish' \
+    "${FIXTURE_DIR}/install_rendered.sh"
 }
 
-# install_bash_completions / install_zsh_completions
+# install_rendered.sh: hook injection
 #
-# INSTALL_NAME and BINARY are readonly after sourcing (both "mytool" in the
-# fixture), so INSTALL_DIR is pointed at a scratch dir containing a mock
-# binary named "mytool" that answers `completion <shell>`.
-
-@test "install_bash_completions: user install writes to XDG completions dir" {
-  USER_INSTALL=true
-  INSTALL_DIR="${BATS_TEST_TMPDIR}/installdir"
-  mkdir -p "${INSTALL_DIR}"
-  cp "${REPO_ROOT}/test/helpers/mock_completion_binary" "${INSTALL_DIR}/${INSTALL_NAME}"
-  unset XDG_DATA_HOME
-  run install_bash_completions
-  (( status == 0 ))
-  [[ -f "${HOME}/.local/share/bash-completion/completions/${BINARY}" ]]
-  [[ ! -e "${HOME}/.bash_completion.d/${BINARY}" ]]
-}
-
-@test "install_bash_completions: respects XDG_DATA_HOME when set" {
-  USER_INSTALL=true
-  INSTALL_DIR="${BATS_TEST_TMPDIR}/installdir"
-  mkdir -p "${INSTALL_DIR}"
-  cp "${REPO_ROOT}/test/helpers/mock_completion_binary" "${INSTALL_DIR}/${INSTALL_NAME}"
-  export XDG_DATA_HOME="${BATS_TEST_TMPDIR}/xdgdata"
-  run install_bash_completions
-  (( status == 0 ))
-  [[ -f "${XDG_DATA_HOME}/bash-completion/completions/${BINARY}" ]]
-}
-
-@test "install_bash_completions: warns and returns 0 when binary lacks completion support" {
-  USER_INSTALL=true
-  INSTALL_DIR="${BATS_TEST_TMPDIR}/installdir"
-  mkdir -p "${INSTALL_DIR}"
-  printf '#!/usr/bin/env bash\nexit 1\n' > "${INSTALL_DIR}/${INSTALL_NAME}"
-  chmod +x "${INSTALL_DIR}/${INSTALL_NAME}"
-  run install_bash_completions
-  (( status == 0 ))
-  [[ "${output}" =~ "not available" ]]
-}
-
-@test "install_zsh_completions: user install writes to ~/.zfunc and wires fpath" {
-  USER_INSTALL=true
-  INSTALL_DIR="${BATS_TEST_TMPDIR}/installdir"
-  mkdir -p "${INSTALL_DIR}"
-  cp "${REPO_ROOT}/test/helpers/mock_completion_binary" "${INSTALL_DIR}/${INSTALL_NAME}"
-  run install_zsh_completions
-  (( status == 0 ))
-  [[ -f "${HOME}/.zfunc/_${BINARY}" ]]
-  grep -qF '.zfunc' "${HOME}/.zshrc"
-  grep -qF 'compinit' "${HOME}/.zshrc"
-}
-
-@test "install_zsh_completions: does not duplicate fpath wiring when already present" {
-  USER_INSTALL=true
-  INSTALL_DIR="${BATS_TEST_TMPDIR}/installdir"
-  mkdir -p "${INSTALL_DIR}"
-  cp "${REPO_ROOT}/test/helpers/mock_completion_binary" "${INSTALL_DIR}/${INSTALL_NAME}"
-  printf 'fpath+=(~/.zfunc)\n' > "${HOME}/.zshrc"
-  install_zsh_completions
-  (( $(grep -cF '.zfunc' "${HOME}/.zshrc") == 1 ))
-}
-
-# install_rendered.sh: hook and completion injection
-#
-# These tests verify that the rendered fixture (rendered with all completions
-# enabled and pre/post hooks injected from test/fixtures/hooks/) contains
-# the expected sentinels and hook content. File-content checks use grep
-# directly. Function-availability checks source the fixture in a subprocess
-# to avoid readonly variable conflicts with the already-sourced setup().
-
-@test "fixture: bash-completions sentinel present in file" {
-  grep -qF "# gpipe test: bash-completions" "${FIXTURE_DIR}/install_rendered.sh"
-}
-
-@test "fixture: zsh-completions sentinel present in file" {
-  grep -qF "# gpipe test: zsh-completions" "${FIXTURE_DIR}/install_rendered.sh"
-}
-
-@test "fixture: fish-completions sentinel present in file" {
-  grep -qF "# gpipe test: fish-completions" "${FIXTURE_DIR}/install_rendered.sh"
-}
+# These tests verify that the rendered fixture (rendered with pre/post hooks
+# injected from test/fixtures/hooks/) contains the expected sentinels and hook
+# content. File-content checks use grep directly.
 
 @test "fixture: pre-install-hook sentinel present in file" {
   grep -qF "# gpipe test: pre-install-hook" "${FIXTURE_DIR}/install_rendered.sh"
@@ -449,19 +367,4 @@ setup() {
 
 @test "fixture: post-hook content injected" {
   grep -qF 'echo "gpipe-fixture-post-hook"' "${FIXTURE_DIR}/install_rendered.sh"
-}
-
-@test "fixture: install_bash_completions function defined when sourced" {
-  run bash -c "source '${FIXTURE_DIR}/install_rendered.sh'; declare -f install_bash_completions"
-  (( status == 0 ))
-}
-
-@test "fixture: install_zsh_completions function defined when sourced" {
-  run bash -c "source '${FIXTURE_DIR}/install_rendered.sh'; declare -f install_zsh_completions"
-  (( status == 0 ))
-}
-
-@test "fixture: install_fish_completions function defined when sourced" {
-  run bash -c "source '${FIXTURE_DIR}/install_rendered.sh'; declare -f install_fish_completions"
-  (( status == 0 ))
 }
