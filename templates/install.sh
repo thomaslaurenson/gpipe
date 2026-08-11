@@ -109,13 +109,10 @@ EOF
 
 # Parse command-line arguments and set USER_INSTALL and NO_VERIFY.
 #
-# Arguments:
-#   $@ - command-line arguments
 # Environment:
 #   USER_INSTALL - set to true for --user, false for --system
 #   NO_VERIFY    - set to true when --no-verify is passed
 # Returns:
-#   0 on success
 #   exits 1 for unknown options
 parse_args() {
   while [[ $# -gt 0 ]]; do
@@ -134,7 +131,6 @@ parse_args() {
 # Outputs:
 #   stdout: platform string, e.g. linux_amd64 or darwin_arm64
 # Returns:
-#   0 on success
 #   exits 1 for unsupported OS or architecture
 detect_platform() {
   local os arch
@@ -164,7 +160,6 @@ detect_platform() {
 # Outputs:
 #   stdout: asset filename, e.g. mytool_linux_amd64
 # Returns:
-#   0 on success
 #   exits 1 for unsupported platform
 resolve_asset() {
   local platform="$1"
@@ -186,7 +181,6 @@ resolve_asset() {
 # if neither curl nor wget is available.
 #
 # Returns:
-#   0 on success
 #   exits 1 if neither curl nor wget is found
 setup_downloader() {
   if command -v curl > /dev/null 2>&1; then
@@ -215,7 +209,6 @@ setup_downloader() {
 #   $1 - URL to download
 #   $2 - destination file path
 # Returns:
-#   0 on success
 #   exits 1 if the download fails
 _download() {
   local url="$1" dest="$2" out
@@ -235,7 +228,6 @@ _download() {
 # Environment:
 #   GITHUB_REPO, VERSION - used to construct download URLs
 # Returns:
-#   0 on success
 #   exits 1 if any download fails
 download_assets() {
   local dest_dir="$1"
@@ -363,7 +355,6 @@ verify_checksum() {
 #   $2 - destination directory
 #   $3 - destination filename
 # Returns:
-#   0 on success
 #   non-zero on failure (permission denied or install error)
 _try_install() {
   local src="$1" dir="$2" name="$3"
@@ -389,7 +380,6 @@ _try_install() {
 #   INSTALL_DIR   - set by this function to the chosen install path
 #   GITHUB_REPO, VERSION - used in no-TTY error messages
 # Returns:
-#   0 on success
 #   exits 1 on failure
 install_binary() {
   local src="$1"
@@ -493,7 +483,6 @@ manage_path() {
 # Arguments:
 #   $@ - command-line arguments forwarded from the shell invocation
 # Returns:
-#   0 on success
 #   exits 1 on any failure
 main() {
   USER_INSTALL=false

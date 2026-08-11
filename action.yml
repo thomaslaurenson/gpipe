@@ -27,24 +27,25 @@ runs:
       if: inputs.cosign_sign == 'true'
       uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
-    # gpipe is built from this action's own checkout rather than downloaded
-    # from a release. github.action_path holds the gpipe repository at exactly
-    # the ref the caller requested, so the code that runs is the code that ref
-    # names, with no version pin to keep in sync and no checksum or signature
-    # to verify: authenticity comes from the ref itself.
+    # setup-go rather than the runner's Go: the image ships a version that may
+    # be older than go.mod requires, and GOTOOLCHAIN=local forbids a download.
     #
-    # GOTOOLCHAIN=local pins the build to the runner's installed Go rather than
-    # letting go.mod's toolchain directive pull a different one down, so an
-    # actions/setup-go earlier in the caller's job cannot change what is built
-    # here. GitHub-hosted runners ship Go preinstalled.
+    # go-version-file is action_path-qualified because setup-go resolves paths
+    # against the caller's workspace, not this action's directory; cache is off
+    # for the same reason, since its key would come from the caller's go.sum.
+    - name: Set up Go
+      uses: actions/setup-go@v7
+      with:
+        go-version-file: ${{ github.action_path }}/go.mod
+        cache: false
+
+    # Built from this action's own checkout: github.action_path holds gpipe at
+    # exactly the ref the caller requested, so authenticity comes from the ref
+    # itself, with no version pin or checksum to keep in sync.
     #
-    # Version is stamped from github.action_ref, the ref this action was
-    # resolved at, so the Gpipe-Version header in every generated script
-    # records what the caller pinned. A floating "@v1" therefore stamps "v1",
-    # and "@v1.4.0" stamps "v1.4.0" -- the stamp is exactly as precise as the
-    # pin. Without this the binary would report its "dev" build default and
-    # every generated installer would be stamped dev. Empty for a local
-    # (uses: ./) checkout, which falls back to dev.
+    # GOTOOLCHAIN=local pins the build to the Go installed above. Version is
+    # stamped from github.action_ref so the Gpipe-Version header records what
+    # the caller pinned, and is empty for a local (uses: ./) checkout.
     - name: Build gpipe
       shell: bash
       working-directory: ${{ github.action_path }}

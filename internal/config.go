@@ -99,8 +99,8 @@ type FlagValues struct {
 // Returns an empty Config (not nil) if the file does not exist.
 //
 // Decoding is strict (KnownFields): an unrecognised key such as a typo'd
-// "install_name" (underscore instead of hyphen) is a parse error rather
-// than being silently ignored.
+// "post_sh" (underscore instead of hyphen) is a parse error rather than
+// being silently ignored.
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
