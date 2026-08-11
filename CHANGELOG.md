@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.1 - 2026-08-11
+
+### Fixed
+
+- Install Go in the action instead of relying on the runner image
+
 ## 1.4.0 - 2026-08-06
 
 ### Added
