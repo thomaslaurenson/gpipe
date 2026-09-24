@@ -80,7 +80,7 @@ type Config struct {
 	Binary    string                   `yaml:"binary"`
 	Platforms map[string]PlatformEntry `yaml:"platforms"`
 	Hooks     Hooks                    `yaml:"hooks"`
-	// Runtime-only: not read from config file, always supplied via flags or auto-detected.
+	// Runtime-only: not read from config file, always supplied via flags or auto-detected
 	GithubRepo string
 	Version    string
 	// GpipeVersion is the gpipe version doing the generating, stamped into the
@@ -236,7 +236,6 @@ func DetectVersion() (string, error) {
 		return "", fmt.Errorf("git not found in PATH: cannot auto-detect version")
 	}
 
-	// Try exact tag match first
 	out, err := exec.Command(git, "describe", "--tags", "--exact-match", "HEAD").CombinedOutput()
 	if err == nil {
 		version := strings.TrimSpace(string(out))
@@ -245,7 +244,6 @@ func DetectVersion() (string, error) {
 		}
 	}
 
-	// Not on an exact tag: find nearest tag and append -dev
 	out, err = exec.Command(git, "describe", "--tags", "--abbrev=0").CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("git describe failed: no tags found. Create a tag or pass --version explicitly")
@@ -326,7 +324,6 @@ func Validate(cfg *Config, mode ValidationMode) []error {
 		errs = append(errs, err)
 	}
 
-	// In normal mode, verify binary files exist on disk
 	if mode == ModeNormal {
 		for platform, entry := range cfg.Platforms {
 			if entry.Path == "" {

@@ -245,7 +245,7 @@ function Invoke-DownloadAsset {
 }
 {{- if .Signed}}
 
-# Thin wrapper around the cosign native command; exists so tests can mock it.
+# Thin wrapper around the cosign native command; exists so tests can mock it
 function Invoke-Cosign {
     & cosign @args
 }
@@ -504,7 +504,7 @@ function Update-Path {
         Write-Warn "Added $InstallDir to $label PATH. Restart your terminal for the change to take effect."
     }
 
-    # Update the current session immediately, with the same exact-entry check.
+    # Update the current session immediately, with the same exact-entry check
     $sessionParts = @($env:PATH -split ';' | Where-Object { $_ -ne '' })
     if ($sessionParts -notcontains $InstallDir) {
         $env:PATH = (@($InstallDir) + $sessionParts) -join ';'

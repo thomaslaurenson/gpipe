@@ -119,7 +119,7 @@ func TestGenerate_MultiplePlatformsChecksumOrder(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// 3 platform binaries, then install.sh and install.ps1 themselves.
+	// 3 platform binaries, then install.sh and install.ps1 themselves
 	lines := strings.Split(strings.TrimSpace(out.Checksums), "\n")
 	if len(lines) != 5 {
 		t.Fatalf("expected 5 checksum lines, got %d: %q", len(lines), lines)

@@ -49,7 +49,7 @@ func main() {
 		log.Fatalf("creating fixture dir: %v", err)
 	}
 
-	// Write a minimal fake binary so the generator can compute a real checksum.
+	// Write a minimal fake binary so the generator can compute a real checksum
 	fakeBinary := filepath.Join(fixtureDir, "fake_binary_go")
 	if err := os.WriteFile(fakeBinary, []byte("fake binary for fixture generation\n"), 0o755); err != nil {
 		log.Fatalf("writing fake binary: %v", err)
@@ -85,7 +85,7 @@ func generateFull(fixtureDir, repoRoot string, platforms map[string]gpipe.Platfo
 	cfg := &gpipe.Config{
 		GithubRepo: "testowner/testrepo",
 		Version:    "v1.2.3",
-		// Pinned so fixtures do not churn as `git describe` output changes.
+		// Pinned so fixtures do not churn as `git describe` output changes
 		GpipeVersion: "v0.0.0-fixture",
 		Binary:       "mytool",
 		Platforms:    platforms,
@@ -129,7 +129,7 @@ func generateChecksums(fixtureDir string, tplFS fs.FS) error {
 	cfg := &gpipe.Config{
 		GithubRepo: "testowner/testrepo",
 		Version:    "v1.2.3",
-		// Pinned so fixtures do not churn as `git describe` output changes.
+		// Pinned so fixtures do not churn as `git describe` output changes
 		GpipeVersion: "v0.0.0-fixture",
 		Binary:       "mytool",
 		Platforms: map[string]gpipe.PlatformEntry{

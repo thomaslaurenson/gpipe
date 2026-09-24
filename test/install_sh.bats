@@ -24,7 +24,7 @@ setup() {
 
   export GPIPE_FIXTURE_DIR="${FIXTURE_DIR}"
 
-  # Isolate HOME so any write that escapes goes to a throwaway directory.
+  # Isolate HOME so any write that escapes goes to a throwaway directory
   export HOME="${BATS_TEST_TMPDIR}/home"
   mkdir -p "${HOME}"
 
@@ -215,7 +215,6 @@ setup() {
 }
 
 @test "verify_checksum: fails when hash does not match" {
-  # Point to the bad checksums file by copying it into a tmp dir alongside the binary.
   local tmp_dir="${BATS_TEST_TMPDIR}/checksum_fail"
   mkdir -p "${tmp_dir}"
   cp "${FIXTURE_DIR}/fake_binary" "${tmp_dir}/fake_binary"

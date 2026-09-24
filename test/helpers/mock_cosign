@@ -29,7 +29,7 @@ if [[ "${1:-}" == "verify-blob" ]]; then
     esac
   done
 
-  # Identity must be anchored at both ends and reference a GitHub workflow.
+  # Identity must be anchored at both ends and reference a GitHub workflow
   if [[ "${identity}" != '^'* || "${identity}" != *'$' ]]; then
     printf 'mock_cosign: --certificate-identity-regexp is not anchored (^...$): %s\n' "${identity}" >&2
     exit 3
