@@ -6,6 +6,11 @@ LDFLAGS := -s -w -X github.com/thomaslaurenson/gpipe/cmd.Version=$(VERSION)
 
 TAG ?= $(shell git describe --tags --abbrev=0 2>/dev/null)
 
+# Both renders are linted: the unsigned one is where a variable or function
+# left outside its {{if .Signed}} block shows up as unused or undefined
+SH_FIXTURES := test/fixtures/install_rendered.sh test/fixtures/install_unsigned.sh
+PS_FIXTURES := test/fixtures/install_rendered.ps1 test/fixtures/install_unsigned.ps1
+
 .PHONY: help
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -43,27 +48,27 @@ vet: ## Run go vet
 	go vet ./...
 
 .PHONY: lint_bash
-lint_bash: generate_test_fixtures ## Run shellcheck on the rendered install.sh fixture
-	@printf 'bash -n  test/fixtures/install_rendered.sh ... '
-	@bash -n test/fixtures/install_rendered.sh \
-	  && printf 'ok\n' \
-	  || { printf 'fail\n'; exit 1; }
-	@printf 'shellcheck  test/fixtures/install_rendered.sh ... '
-	@shellcheck test/fixtures/install_rendered.sh \
-	  && printf 'ok\n' \
-	  || { printf 'fail\n'; exit 1; }
+lint_bash: generate_test_fixtures ## Run shellcheck on the rendered install.sh fixtures
+	@for f in $(SH_FIXTURES); do \
+	  printf 'bash -n  %s ... ' "$$f"; \
+	  bash -n "$$f" && printf 'ok\n' || { printf 'fail\n'; exit 1; }; \
+	  printf 'shellcheck  %s ... ' "$$f"; \
+	  shellcheck "$$f" && printf 'ok\n' || { printf 'fail\n'; exit 1; }; \
+	done
 
 .PHONY: lint_ps
-lint_ps: generate_test_fixtures ## Run PSScriptAnalyzer on the rendered install.ps1
-	@printf 'PSScriptAnalyzer  test/fixtures/install_rendered.ps1 ... '
-	@pwsh -NoProfile -NonInteractive -Command \
-	  "Import-Module PSScriptAnalyzer; \
-	   \$$r = Invoke-ScriptAnalyzer -Path 'test/fixtures/install_rendered.ps1' \
-	     -Severity Warning,Error \
-	     -ExcludeRule 'PSAvoidUsingWriteHost','PSUseShouldProcessForStateChangingFunctions'; \
-	   if (\$$r) { \$$r | Format-Table -AutoSize; exit 1 }" \
-	  && printf 'ok\n' \
-	  || { printf 'fail\n'; exit 1; }
+lint_ps: generate_test_fixtures ## Run PSScriptAnalyzer on the rendered install.ps1 fixtures
+	@for f in $(PS_FIXTURES); do \
+	  printf 'PSScriptAnalyzer  %s ... ' "$$f"; \
+	  pwsh -NoProfile -NonInteractive -Command \
+	    "Import-Module PSScriptAnalyzer; \
+	     \$$r = Invoke-ScriptAnalyzer -Path '$$f' \
+	       -Severity Warning,Error \
+	       -ExcludeRule 'PSAvoidUsingWriteHost','PSUseShouldProcessForStateChangingFunctions'; \
+	     if (\$$r) { \$$r | Format-Table -AutoSize; exit 1 }" \
+	    && printf 'ok\n' \
+	    || { printf 'fail\n'; exit 1; }; \
+	done
 
 # The binary embeds templates/, so "validate the embedded content" means
 # rendering it and running the real shell linters over the result.

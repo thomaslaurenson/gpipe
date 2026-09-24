@@ -10,6 +10,10 @@
 //     individual functions from these files and grep them for the hook
 //     sentinels.
 //
+//   - install_unsigned.sh / install_unsigned.ps1, the same config rendered
+//     without signing, which the suites grep to prove an unsigned release's
+//     installers carry no signature step.
+//
 //   - checksums.txt (and the fake_binary it covers), used by the checksum
 //     verification tests.
 //
@@ -73,8 +77,8 @@ func main() {
 	fmt.Println("fixtures up to date")
 }
 
-// generateFull renders the install scripts with pre/post hooks sourced from
-// test/fixtures/hooks/.
+// generateFull renders the install scripts, signed and unsigned, with pre/post
+// hooks sourced from test/fixtures/hooks/.
 func generateFull(fixtureDir, repoRoot string, platforms map[string]gpipe.PlatformEntry, tplFS fs.FS) error {
 	hooksDir := filepath.Join(repoRoot, "test", "fixtures", "hooks")
 
@@ -85,6 +89,9 @@ func generateFull(fixtureDir, repoRoot string, platforms map[string]gpipe.Platfo
 		GpipeVersion: "v0.0.0-fixture",
 		Binary:       "mytool",
 		Platforms:    platforms,
+		// Signed, so the suites can exercise verify_signature and
+		// Confirm-Signature with mocked cosign
+		Sign: true,
 		Hooks: gpipe.Hooks{
 			PreSh:   filepath.Join(hooksDir, "pre_install.sh"),
 			PostSh:  filepath.Join(hooksDir, "post_install.sh"),
@@ -93,14 +100,22 @@ func generateFull(fixtureDir, repoRoot string, platforms map[string]gpipe.Platfo
 		},
 	}
 
-	out, err := gpipe.Generate(cfg, tplFS, gpipe.ModeNormal)
+	signed, err := gpipe.Generate(cfg, tplFS, gpipe.ModeNormal)
+	if err != nil {
+		return err
+	}
+
+	cfg.Sign = false
+	unsigned, err := gpipe.Generate(cfg, tplFS, gpipe.ModeNormal)
 	if err != nil {
 		return err
 	}
 
 	return writeFiles(fixtureDir, map[string]string{
-		"install_rendered.sh":  out.InstallSh,
-		"install_rendered.ps1": out.InstallPs1,
+		"install_rendered.sh":  signed.InstallSh,
+		"install_rendered.ps1": signed.InstallPs1,
+		"install_unsigned.sh":  unsigned.InstallSh,
+		"install_unsigned.ps1": unsigned.InstallPs1,
 	})
 }
 

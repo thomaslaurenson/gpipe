@@ -2,6 +2,8 @@
 /dist
 /test/fixtures/install_rendered.sh
 /test/fixtures/install_rendered.ps1
+/test/fixtures/install_unsigned.sh
+/test/fixtures/install_unsigned.ps1
 /test/fixtures/fake_binary
 /test/fixtures/fake_binary_go
 /test/fixtures/fake_binary_ps
