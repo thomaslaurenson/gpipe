@@ -23,7 +23,7 @@
 # Test binary, built with `go test -c`
 *.test
 
-# Code coverage profiles and other test artifacts
+# Code coverage profiles and other test artefacts
 *.out
 coverage.*
 *.coverprofile
@@ -36,7 +36,7 @@ profile.cov
 go.work
 go.work.sum
 
-# env file
+# Env file
 .env
 
 # Editor/IDE

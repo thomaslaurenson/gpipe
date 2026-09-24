@@ -13,7 +13,7 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-24.04
-    # Serialize releases so two tag pushes cannot race on the force-pushed
+    # Serialise releases so two tag pushes cannot race on the force-pushed
     # major-version tag below.
     concurrency:
       group: release-major-tag

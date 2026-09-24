@@ -162,5 +162,5 @@ release_check: ## Validate goreleaser config
 ci: fmt_check mod_check vet check test ## Run all CI checks locally
 
 .PHONY: clean
-clean: ## Remove build artifacts
+clean: ## Remove build artefacts
 	rm -rf bin/ dist/ install.sh install.ps1 checksums.txt
