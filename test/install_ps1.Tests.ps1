@@ -17,7 +17,6 @@ BeforeAll {
     # Invoke-Installer from running.
     . $script:RenderedPs1
 
-    # Create a small fake binary fixture for checksum tests.
     $script:FakeBinary = Join-Path $script:FixtureDir 'fake_binary_ps'
     [System.IO.File]::WriteAllText($script:FakeBinary, 'fake-ps-binary')
 
@@ -37,9 +36,7 @@ AfterAll {
     if (Test-Path $script:FakeBinary) { Remove-Item $script:FakeBinary }
 }
 
-# ============================================================
 # Get-Platform
-# ============================================================
 
 Describe 'Get-Platform' {
 
@@ -69,9 +66,7 @@ Describe 'Get-Platform' {
     }
 }
 
-# ============================================================
 # Resolve-Asset
-# ============================================================
 
 Describe 'Resolve-Asset' {
 
@@ -88,9 +83,7 @@ Describe 'Resolve-Asset' {
     }
 }
 
-# ============================================================
 # Confirm-Signature
-# ============================================================
 
 Describe 'Confirm-Signature' {
 
@@ -123,14 +116,11 @@ Describe 'Confirm-Signature' {
     }
 }
 
-# ============================================================
 # Confirm-Checksum
-# ============================================================
 
 Describe 'Confirm-Checksum' {
 
     BeforeEach {
-        # Copy fake binary into TestDrive alongside the checksums file.
         Copy-Item $script:FakeBinary (Join-Path $TestDrive 'fake_binary_ps')
         Copy-Item $script:ChecksumsFile (Join-Path $TestDrive 'checksums.txt')
     }
@@ -140,7 +130,6 @@ Describe 'Confirm-Checksum' {
     }
 
     It 'exits with an error when the hash does not match' {
-        # Overwrite checksums.txt with a bad hash.
         Copy-Item $script:ChecksumsFileBad (Join-Path $TestDrive 'checksums.txt') -Force
         { Confirm-Checksum -TmpDir $TestDrive -AssetName 'fake_binary_ps' } | Should -Throw
     }
@@ -158,9 +147,7 @@ Describe 'Confirm-Checksum' {
     }
 }
 
-# ============================================================
 # Resolve-InstallDir
-# ============================================================
 
 Describe 'Resolve-InstallDir' {
 
@@ -183,9 +170,7 @@ Describe 'Resolve-InstallDir' {
     }
 }
 
-# ============================================================
 # Resolve-PsExe (elevation helper)
-# ============================================================
 
 Describe 'Elevation uses correct PowerShell executable' {
 
@@ -213,9 +198,7 @@ Describe 'Elevation uses correct PowerShell executable' {
     }
 }
 
-# ============================================================
 # Install-Binary
-# ============================================================
 
 Describe 'Install-Binary' {
 
@@ -245,9 +228,7 @@ Describe 'Install-Binary' {
     }
 }
 
-# ============================================================
 # Update-Path
-# ============================================================
 #
 # [Environment]::GetEnvironmentVariable / SetEnvironmentVariable are .NET
 # static methods that Pester 5 cannot mock. Tests use two strategies:
@@ -258,14 +239,14 @@ Describe 'Install-Binary' {
 Describe 'Update-Path' {
 
     It 'user install: guard is false when InstallDir already in PATH string' {
-        # Simulates the -notlike check: should be $false, skipping SetEnv.
+        # Simulates the -notlike check: should be $false, skipping SetEnv
         $installDir  = 'C:\Users\test\AppData\Local\Programs\mytool'
         $existingPath = "C:\Windows\system32;$installDir"
         ($existingPath -notlike "*$installDir*") | Should -Be $false
     }
 
     It 'user install: guard is true when InstallDir is absent from PATH string' {
-        # Simulates the -notlike check: should be $true, triggering SetEnv.
+        # Simulates the -notlike check: should be $true, triggering SetEnv
         $installDir  = 'C:\Users\test\AppData\Local\Programs\mytool'
         $existingPath = 'C:\Windows\system32'
         ($existingPath -notlike "*$installDir*") | Should -Be $true
@@ -294,7 +275,7 @@ Describe 'Update-Path' {
     }
 
     It 'system install: source uses Machine scope not User scope' {
-        # Verify the correct registry scope is used by inspecting the function body.
+        # Verify the correct registry scope is used by inspecting the function body
         $source = (Get-Command Update-Path).ScriptBlock.ToString()
         $source | Should -Match "'Machine'"
     }
@@ -305,9 +286,7 @@ Describe 'Update-Path' {
     }
 }
 
-# ============================================================
 # Invoke-DownloadAsset
-# ============================================================
 
 Describe 'Invoke-DownloadAsset' {
 
@@ -318,7 +297,6 @@ Describe 'Invoke-DownloadAsset' {
 
     It 'calls Invoke-WebRequest three times for binary, checksums, and sigstore bundle' {
         Mock Invoke-WebRequest {
-            # Write an empty file to the requested output path.
             Set-Content -Path $OutFile -Value ''
         }
 
@@ -346,9 +324,7 @@ Describe 'install_unsigned.ps1: no signature step' {
     }
 }
 
-# ============================================================
 # install_rendered.ps1: hook injection
-# ============================================================
 #
 # These tests verify that the fixture, rendered with pre/post hooks injected
 # from test/fixtures/hooks/, contains the expected sentinels and hook
