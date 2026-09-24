@@ -2,6 +2,8 @@
 /dist
 /test/fixtures/install_rendered.sh
 /test/fixtures/install_rendered.ps1
+/test/fixtures/install_unsigned.sh
+/test/fixtures/install_unsigned.ps1
 /test/fixtures/fake_binary
 /test/fixtures/fake_binary_go
 /test/fixtures/fake_binary_ps
@@ -21,7 +23,7 @@
 # Test binary, built with `go test -c`
 *.test
 
-# Code coverage profiles and other test artifacts
+# Code coverage profiles and other test artefacts
 *.out
 coverage.*
 *.coverprofile
@@ -34,7 +36,7 @@ profile.cov
 go.work
 go.work.sum
 
-# env file
+# Env file
 .env
 
 # Editor/IDE

@@ -24,7 +24,7 @@ setup() {
 
   export GPIPE_FIXTURE_DIR="${FIXTURE_DIR}"
 
-  # Isolate HOME so any write that escapes goes to a throwaway directory.
+  # Isolate HOME so any write that escapes goes to a throwaway directory
   export HOME="${BATS_TEST_TMPDIR}/home"
   mkdir -p "${HOME}"
 
@@ -215,7 +215,6 @@ setup() {
 }
 
 @test "verify_checksum: fails when hash does not match" {
-  # Point to the bad checksums file by copying it into a tmp dir alongside the binary.
   local tmp_dir="${BATS_TEST_TMPDIR}/checksum_fail"
   mkdir -p "${tmp_dir}"
   cp "${FIXTURE_DIR}/fake_binary" "${tmp_dir}/fake_binary"
@@ -256,6 +255,16 @@ setup() {
   export MOCK_COSIGN_EXIT=0
   run verify_signature "${FIXTURE_DIR}"
   (( status == 0 ))
+}
+
+@test "verify_signature: warns and continues when cosign is not on PATH" {
+  NO_VERIFY=false
+  local empty_bin="${BATS_TEST_TMPDIR}/empty"
+  mkdir -p "${empty_bin}"
+  PATH="${empty_bin}" run verify_signature "${FIXTURE_DIR}"
+  (( status == 0 ))
+  [[ "${output}" =~ "cosign not found" ]]
+  [[ ! "${output}" =~ "Cosign signature verified" ]]
 }
 
 # _try_install
@@ -316,8 +325,8 @@ setup() {
   [[ "${output}" =~ "export PATH=" ]]
 }
 
-# The whole point of the v2 trim: report, never edit. A dotfile the user did
-# not ask the installer to touch must come out of a full run untouched.
+# manage_path reports and never edits: a dotfile the user did not ask the
+# installer to touch must come out of a full run untouched.
 @test "manage_path: writes to no shell profile" {
   INSTALL_DIR="${BATS_TEST_TMPDIR}/unreachable"
   mkdir -p "${INSTALL_DIR}"
@@ -345,6 +354,12 @@ setup() {
 @test "fixture: contains no completion or dotfile-writing logic" {
   ! grep -qE 'completion|\.bashrc|\.zshrc|\.zfunc|config\.fish' \
     "${FIXTURE_DIR}/install_rendered.sh"
+}
+
+# An unsigned release has no bundle, so its installer must neither fetch one
+# nor offer a flag for a check it never performs.
+@test "fixture (unsigned): contains no signature verification" {
+  ! grep -qiE 'cosign|sigstore|no-verify' "${FIXTURE_DIR}/install_unsigned.sh"
 }
 
 # install_rendered.sh: hook injection

@@ -74,18 +74,23 @@ type PlatformEntry struct {
 }
 
 // Config holds the merged configuration from .gpipe.yml and CLI flags.
-// Note: GithubRepo and Version are runtime-only inputs supplied via CLI flags,
-// never read from the config file.
+// Note: GithubRepo, Version and Sign are runtime-only inputs supplied via CLI
+// flags, never read from the config file.
 type Config struct {
 	Binary    string                   `yaml:"binary"`
 	Platforms map[string]PlatformEntry `yaml:"platforms"`
 	Hooks     Hooks                    `yaml:"hooks"`
-	// Runtime-only: not read from config file, always supplied via flags or auto-detected.
+	// Runtime-only: not read from config file, always supplied via flags or auto-detected
 	GithubRepo string
 	Version    string
 	// GpipeVersion is the gpipe version doing the generating, stamped into the
 	// generated scripts. Defaults to "unknown" when unset.
 	GpipeVersion string
+	// Sign records whether checksums.txt will be cosign-signed after
+	// generation, which decides whether the installers verify a signature.
+	// Tagged out of the YAML: it is a runtime flag, and the strict decoder
+	// must reject sign as a config key rather than read it.
+	Sign bool `yaml:"-"`
 }
 
 // FlagValues holds CLI flag overrides.
@@ -114,8 +119,7 @@ func LoadConfig(path string) (*Config, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 	// An empty (or comment/whitespace-only) file decodes as io.EOF rather
-	// than populating cfg; treat that the same as "no fields set", matching
-	// the previous yaml.Unmarshal behaviour instead of surfacing an error.
+	// than populating cfg. That is a config with no fields set, not an error.
 	if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("parsing config file: %w", err)
 	}
@@ -232,7 +236,6 @@ func DetectVersion() (string, error) {
 		return "", fmt.Errorf("git not found in PATH: cannot auto-detect version")
 	}
 
-	// Try exact tag match first
 	out, err := exec.Command(git, "describe", "--tags", "--exact-match", "HEAD").CombinedOutput()
 	if err == nil {
 		version := strings.TrimSpace(string(out))
@@ -241,7 +244,6 @@ func DetectVersion() (string, error) {
 		}
 	}
 
-	// Not on an exact tag: find nearest tag and append -dev
 	out, err = exec.Command(git, "describe", "--tags", "--abbrev=0").CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("git describe failed: no tags found. Create a tag or pass --version explicitly")
@@ -322,7 +324,6 @@ func Validate(cfg *Config, mode ValidationMode) []error {
 		errs = append(errs, err)
 	}
 
-	// In normal mode, verify binary files exist on disk
 	if mode == ModeNormal {
 		for platform, entry := range cfg.Platforms {
 			if entry.Path == "" {

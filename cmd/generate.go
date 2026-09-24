@@ -33,7 +33,7 @@ func init() {
 	generateCmd.Flags().StringVar(&generateFlags.version, "version", "", "Release version tag, e.g. v1.2.3 (auto-detected from git tags if not set)")
 	generateCmd.Flags().StringVar(&generateFlags.configPath, "config", ".gpipe.yml", "Path to config file")
 	generateCmd.Flags().BoolVar(&generateFlags.dryRun, "dry-run", false, "Generate scripts without requiring all binaries to be present")
-	generateCmd.Flags().BoolVar(&generateFlags.sign, "sign", false, "Sign checksums.txt with cosign after generation")
+	generateCmd.Flags().BoolVar(&generateFlags.sign, "sign", false, "Sign checksums.txt with cosign after generation; the installers then verify that signature")
 }
 
 func runGenerate(cmd *cobra.Command, args []string) error {
@@ -48,8 +48,8 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	})
 
 	cfg.GpipeVersion = Version
+	cfg.Sign = generateFlags.sign
 
-	// Auto-detect repo if not supplied
 	if cfg.GithubRepo == "" {
 		detected, err := gpipe.DetectRepo()
 		if err != nil {
@@ -59,7 +59,6 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 		cfg.GithubRepo = detected
 	}
 
-	// Auto-detect version if not supplied
 	if cfg.Version == "" {
 		detected, err := gpipe.DetectVersion()
 		if err != nil {
