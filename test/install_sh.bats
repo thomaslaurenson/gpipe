@@ -258,6 +258,16 @@ setup() {
   (( status == 0 ))
 }
 
+@test "verify_signature: warns and continues when cosign is not on PATH" {
+  NO_VERIFY=false
+  local empty_bin="${BATS_TEST_TMPDIR}/empty"
+  mkdir -p "${empty_bin}"
+  PATH="${empty_bin}" run verify_signature "${FIXTURE_DIR}"
+  (( status == 0 ))
+  [[ "${output}" =~ "cosign not found" ]]
+  [[ ! "${output}" =~ "Cosign signature verified" ]]
+}
+
 # _try_install
 
 @test "_try_install: copies binary to destination with executable permissions" {
@@ -345,6 +355,12 @@ setup() {
 @test "fixture: contains no completion or dotfile-writing logic" {
   ! grep -qE 'completion|\.bashrc|\.zshrc|\.zfunc|config\.fish' \
     "${FIXTURE_DIR}/install_rendered.sh"
+}
+
+# An unsigned release has no bundle, so its installer must neither fetch one
+# nor offer a flag for a check it never performs.
+@test "fixture (unsigned): contains no signature verification" {
+  ! grep -qiE 'cosign|sigstore|no-verify' "${FIXTURE_DIR}/install_unsigned.sh"
 }
 
 # install_rendered.sh: hook injection

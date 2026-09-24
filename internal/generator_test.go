@@ -485,6 +485,7 @@ func TestGenerate_CosignIdentity(t *testing.T) {
 			cfg, _ := minimalCfg(t)
 			cfg.GithubRepo = tc.repo
 			cfg.Version = tc.version
+			cfg.Sign = true
 
 			out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 			if err != nil {
@@ -504,6 +505,7 @@ func TestGenerate_CosignIdentity(t *testing.T) {
 func TestGenerate_Ps1FunctionsPresent(t *testing.T) {
 	t.Parallel()
 	cfg, _ := minimalCfg(t)
+	cfg.Sign = true // Confirm-Signature is rendered only for a signed release
 	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -561,6 +563,7 @@ func TestGenerate_Ps1ScriptScopeConstants(t *testing.T) {
 func TestGenerate_ShFunctionsPresent(t *testing.T) {
 	t.Parallel()
 	cfg, _ := minimalCfg(t)
+	cfg.Sign = true // verify_signature is rendered only for a signed release
 	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -604,6 +607,47 @@ func TestGenerate_DoesNotRequireCosign(t *testing.T) {
 	cfg, _ := minimalCfg(t)
 	if _, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal); err != nil {
 		t.Fatalf("generation should not require cosign, got error: %v", err)
+	}
+}
+
+// An unsigned release has no bundle to fetch, so its installers carry no
+// signature step at all: no bundle download, no cosign call and no flag to
+// skip either. Anything left outside an {{if .Signed}} block shows up here.
+func TestGenerate_UnsignedOmitsSignatureVerification(t *testing.T) {
+	t.Parallel()
+	cfg, _ := minimalCfg(t) // Sign deliberately unset
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for name, script := range map[string]string{"install.sh": out.InstallSh, "install.ps1": out.InstallPs1} {
+		for _, marker := range []string{"cosign", "sigstore", "no-verify", "NoVerify", "NO_VERIFY", "--sign"} {
+			if strings.Contains(script, marker) {
+				t.Errorf("%s should not reference %q when the release is unsigned", name, marker)
+			}
+		}
+	}
+}
+
+func TestGenerate_SignedVerifiesSignature(t *testing.T) {
+	t.Parallel()
+	cfg, _ := minimalCfg(t)
+	cfg.Sign = true
+	out, err := gpipe.Generate(cfg, testTemplateFS, gpipe.ModeNormal)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, marker := range []string{"verify_signature()", "checksums.txt.sigstore.json", "--no-verify", "--sign"} {
+		if !strings.Contains(out.InstallSh, marker) {
+			t.Errorf("install.sh missing %q for a signed release", marker)
+		}
+	}
+	for _, marker := range []string{"function Confirm-Signature", "checksums.txt.sigstore.json", "-NoVerify", "--sign"} {
+		if !strings.Contains(out.InstallPs1, marker) {
+			t.Errorf("install.ps1 missing %q for a signed release", marker)
+		}
 	}
 }
 

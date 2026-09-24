@@ -6,7 +6,7 @@
 # Gpipe-Version: {{.GpipeVersion}}
 
 # Re-generate with:
-# gpipe generate --repo <owner/repo> --version <vX.Y.Z>
+# gpipe generate --repo <owner/repo> --version <vX.Y.Z>{{if .Signed}} --sign{{end}}
 
 # Wrapping the script body in a brace block causes the shell to buffer the
 # complete download before starting execution, preventing partial runs if the
@@ -83,11 +83,13 @@ OPTIONS:
   -h, --help      Show this help message
   --user          Install to ~/.local/bin (no sudo required)
   --system        Install to /usr/local/bin (default, may require sudo)
-  --no-verify     Skip cosign signature verification on checksums.txt
-                  By default, the installer verifies the release signature
-                  using cosign. Use this flag only if cosign is unavailable.
-                  Install cosign:
-                  https://docs.sigstore.dev/cosign/system_config/installation/
+{{- if .Signed}}
+  --no-verify     Skip cosign signature verification of checksums.txt
+                  By default the installer verifies the release signature
+                  when cosign is installed, and warns and continues when
+                  it is not. This flag skips the check even when cosign
+                  is installed.
+{{- end}}
 
 EXAMPLES:
   # System-wide install (default)
@@ -99,19 +101,23 @@ EXAMPLES:
   curl -fsSL \
     https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/install.sh \
     | bash -s -- --user
+{{- if .Signed}}
 
   # Skip cosign verification (not recommended)
   curl -fsSL \
     https://github.com/${GITHUB_REPO}/releases/download/${VERSION}/install.sh \
     | bash -s -- --no-verify
+{{- end}}
 EOF
 }
 
-# Parse command-line arguments and set USER_INSTALL and NO_VERIFY.
+# Parse command-line arguments into the option variables main initialises.
 #
 # Environment:
 #   USER_INSTALL - set to true for --user, false for --system
+{{- if .Signed}}
 #   NO_VERIFY    - set to true when --no-verify is passed
+{{- end}}
 # Returns:
 #   exits 1 for unknown options
 parse_args() {
@@ -120,7 +126,9 @@ parse_args() {
       -h|--help)    show_help; exit 0 ;;
       --user)       USER_INSTALL=true;  shift ;;
       --system)     USER_INSTALL=false; shift ;;
+{{- if .Signed}}
       --no-verify)  NO_VERIFY=true;     shift ;;
+{{- end}}
       *)            error "Unknown option: $1. Run with --help for usage." ;;
     esac
   done
@@ -220,7 +228,8 @@ _download() {
   fi
 }
 
-# Download the binary, checksums, and cosign bundle into a temp directory.
+# Download the release assets into a temp directory: the binary, checksums.txt
+# and, for a signed release, the signature bundle.
 #
 # Arguments:
 #   $1 - destination directory (must already exist)
@@ -236,20 +245,24 @@ download_assets() {
   base_url="https://github.com/${GITHUB_REPO}/releases/download/${VERSION}"
   local download_url="${base_url}/${asset_name}"
   local checksums_url="${base_url}/checksums.txt"
-  local checksums_sig_url="${base_url}/checksums.txt.sigstore.json"
 
   info "Downloading ${BINARY} ${VERSION} for ${PLATFORM}" "${download_url}"
   _download "${download_url}"       "${dest_dir}/${asset_name}"
   _download "${checksums_url}"      "${dest_dir}/checksums.txt"
+{{- if .Signed}}
+  local checksums_sig_url="${base_url}/checksums.txt.sigstore.json"
   _download "${checksums_sig_url}"  "${dest_dir}/checksums.txt.sigstore.json"
+{{- end}}
 }
+{{- if .Signed}}
 
 # Verify the cosign signature on checksums.txt.
 #
-# Skips verification when NO_VERIFY is true. Exits with an error if cosign
-# is not found and NO_VERIFY is false. The certificate identity regexp
-# (bound to this repo and this version's tag ref) is baked in as a literal
-# at generation time; see cosignCertIdentity in generator.go.
+# Warns and continues when cosign is not installed or NO_VERIFY is true; the
+# checksum check that follows still runs. Fails only when cosign is present
+# and rejects the signature. The certificate identity regexp (bound to this
+# repo and this version's tag ref) is baked in as a literal at generation
+# time; see cosignCertIdentity in generator.go.
 #
 # Arguments:
 #   $1 - directory containing checksums.txt and checksums.txt.sigstore.json
@@ -257,7 +270,7 @@ download_assets() {
 #   NO_VERIFY - skip when true
 # Returns:
 #   0 on success or when skipped
-#   exits 1 if cosign is missing or verification fails
+#   exits 1 if verification fails
 verify_signature() {
   local dir="$1"
 
@@ -270,12 +283,13 @@ verify_signature() {
   fi
 
   if ! command -v cosign > /dev/null 2>&1; then
-    error "cosign not found in PATH" \
-          "The installer verifies release signatures by default to ensure" \
-          "the download has not been tampered with. cosign is required for this." \
-          "Install cosign: https://docs.sigstore.dev/cosign/system_config/installation/" \
-          "To skip verification (not recommended) pass following arguments:" \
-          "  bash -s -- --no-verify"
+    warn "cosign not found in PATH: skipping signature verification" \
+         "The checksum check that still runs only detects accidental" \
+         "corruption: checksums.txt comes from the same origin as the" \
+         "binary, so it offers no protection against a tampered release." \
+         "Install cosign to verify future installs:" \
+         "https://docs.sigstore.dev/cosign/system_config/installation/"
+    return 0
   fi
 
   info "Verifying cosign signature on checksums.txt"
@@ -302,6 +316,7 @@ verify_signature() {
   fi
   ok "Cosign signature verified"
 }
+{{- end}}
 
 # Verify the SHA-256 checksum of a downloaded asset.
 #
@@ -486,7 +501,9 @@ manage_path() {
 #   exits 1 on any failure
 main() {
   USER_INSTALL=false
+{{- if .Signed}}
   NO_VERIFY=false
+{{- end}}
   INSTALL_DIR=""
   PLATFORM=""
 
@@ -515,7 +532,9 @@ main() {
 {{- end}}
 
   download_assets "${tmp_dir}" "${asset_name}"
+{{- if .Signed}}
   verify_signature "${tmp_dir}"
+{{- end}}
   verify_checksum "${tmp_dir}" "${asset_name}"
   install_binary "${tmp_dir}/${asset_name}"
 

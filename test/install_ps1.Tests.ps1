@@ -99,9 +99,11 @@ Describe 'Confirm-Signature' {
         $result | Should -Match 'Skipping cosign'
     }
 
-    It 'exits with an error when cosign is not found in PATH' {
+    It 'warns and continues when cosign is not found in PATH' {
         Mock Get-Command { return $null } -ParameterFilter { $Name -eq 'cosign' }
-        { Confirm-Signature -TmpDir $TestDrive -NoVerify $false } | Should -Throw
+        $result = (Confirm-Signature -TmpDir $TestDrive -NoVerify $false 6>&1) | Out-String
+        $result | Should -Match 'cosign not found'
+        $result | Should -Not -Match 'Cosign signature verified'
     }
 
     It 'passes when cosign exits 0' {
@@ -331,6 +333,16 @@ Describe 'Invoke-DownloadAsset' {
 
         { Invoke-DownloadAsset -TmpDir $TestDrive -AssetName 'mytool_windows_amd64.exe' } |
             Should -Throw
+    }
+}
+
+# An unsigned release has no bundle, so its installer must neither fetch one
+# nor offer a switch for a check it never performs.
+Describe 'install_unsigned.ps1: no signature step' {
+
+    It 'contains no signature verification' {
+        $unsigned = Get-Content (Join-Path $script:FixtureDir 'install_unsigned.ps1') -Raw
+        $unsigned | Should -Not -Match 'cosign|sigstore|NoVerify'
     }
 }
 

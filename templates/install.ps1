@@ -4,15 +4,16 @@
 # Gpipe-Version: {{.GpipeVersion}}
 
 # Re-generate with:
-# gpipe generate --repo <owner/repo> --version <vX.Y.Z>
+# gpipe generate --repo <owner/repo> --version <vX.Y.Z>{{if .Signed}} --sign{{end}}
 
 #Requires -Version 5.1
 
 [CmdletBinding()]
 param(
     [switch]$User,
-    [switch]$Help,
+    [switch]$Help{{- if .Signed}},
     [switch]$NoVerify
+{{- end}}
 )
 
 $ErrorActionPreference = 'Stop'
@@ -119,15 +120,17 @@ function Show-Help {
 $script:Binary installer
 
 USAGE:
-  .\install.ps1 [-User] [-NoVerify] [-Help]
+  .\install.ps1 [-User]{{if .Signed}} [-NoVerify]{{end}} [-Help]
 
 OPTIONS:
   -User       Install to user directory (no elevation required)
               Default path: $env:LOCALAPPDATA\Programs\$script:Binary
-  -NoVerify   Skip cosign signature verification on checksums.txt
-              By default, the installer verifies the release signature
-              using cosign. Use this flag only if cosign is unavailable.
-              Install cosign: https://docs.sigstore.dev/cosign/system_config/installation/
+{{- if .Signed}}
+  -NoVerify   Skip cosign signature verification of checksums.txt
+              By default the installer verifies the release signature when
+              cosign is installed, and warns and continues when it is not.
+              This switch skips the check even when cosign is installed.
+{{- end}}
   -Help       Show this help message
 
 EXAMPLES:
@@ -136,9 +139,11 @@ EXAMPLES:
 
   # User install, no elevation needed
   .\install.ps1 -User
+{{- if .Signed}}
 
   # Skip cosign verification (not recommended)
   .\install.ps1 -NoVerify
+{{- end}}
 
   # Piped user install
   Invoke-WebRequest -Uri "https://github.com/$script:GithubRepo/releases/download/$script:Version/install.ps1" ``
@@ -196,7 +201,8 @@ function Resolve-Asset {
     return $assetNames[$Platform]
 }
 
-# Download the binary, checksums, and cosign bundle into a directory.
+# Download the release assets into a directory: the binary, checksums.txt and,
+# for a signed release, the signature bundle.
 #
 # Parameters:
 #   TmpDir    - destination directory (must already exist)
@@ -213,7 +219,6 @@ function Invoke-DownloadAsset {
 
     $downloadUrl     = "https://github.com/$script:GithubRepo/releases/download/$script:Version/$AssetName"
     $checksumsUrl    = "https://github.com/$script:GithubRepo/releases/download/$script:Version/checksums.txt"
-    $checksumsSigUrl = "https://github.com/$script:GithubRepo/releases/download/$script:Version/checksums.txt.sigstore.json"
 
     Write-Info "Downloading $script:Binary $script:Version for $(Get-Platform)", $downloadUrl
 
@@ -228,13 +233,17 @@ function Invoke-DownloadAsset {
     } catch {
         Exit-Error "Failed to download checksums.txt: $_"
     }
+{{- if .Signed}}
 
+    $checksumsSigUrl = "https://github.com/$script:GithubRepo/releases/download/$script:Version/checksums.txt.sigstore.json"
     try {
         Invoke-WebRequest -Uri $checksumsSigUrl -OutFile "$TmpDir\checksums.txt.sigstore.json" -UseBasicParsing -TimeoutSec 30
     } catch {
         Exit-Error "Failed to download checksums.txt.sigstore.json: $_"
     }
+{{- end}}
 }
+{{- if .Signed}}
 
 # Thin wrapper around the cosign native command; exists so tests can mock it.
 function Invoke-Cosign {
@@ -243,16 +252,17 @@ function Invoke-Cosign {
 
 # Verify the cosign signature on checksums.txt.
 #
-# Skips verification when $NoVerify is true. Exits with an error if cosign
-# is not found and $NoVerify is false. The certificate identity regexp
-# (bound to this repo and this version's tag ref) is baked in as a literal
-# at generation time; see cosignCertIdentity in generator.go.
+# Warns and continues when cosign is not installed or $NoVerify is true; the
+# checksum check that follows still runs. Fails only when cosign is present
+# and rejects the signature. The certificate identity regexp (bound to this
+# repo and this version's tag ref) is baked in as a literal at generation
+# time; see cosignCertIdentity in generator.go.
 #
 # Parameters:
 #   TmpDir   - directory containing checksums.txt and checksums.txt.sigstore.json
 #   NoVerify - when true, skip verification and emit a warning
 # Throws:
-#   terminating error if cosign is missing or verification fails
+#   terminating error if verification fails
 function Confirm-Signature {
     param(
         [string]$TmpDir,
@@ -268,17 +278,13 @@ function Confirm-Signature {
     }
 
     if (-not (Get-Command cosign -ErrorAction SilentlyContinue)) {
-        Exit-Error @'
-cosign not found in PATH.
-
-  The installer verifies release signatures by default to ensure
-  the download has not been tampered with. cosign is required for this.
-
-  Install cosign: https://docs.sigstore.dev/cosign/system_config/installation/
-
-  To skip verification (not recommended):
-    .\install.ps1 -NoVerify
-'@
+        Write-Warn 'cosign not found in PATH: skipping signature verification',
+                   'The checksum check that still runs only detects accidental',
+                   'corruption: checksums.txt comes from the same origin as the',
+                   'binary, so it offers no protection against a tampered release.',
+                   'Install cosign to verify future installs:',
+                   'https://docs.sigstore.dev/cosign/system_config/installation/'
+        return
     }
 
     Write-Info 'Verifying cosign signature on checksums.txt'
@@ -310,6 +316,7 @@ cosign not found in PATH.
     }
     Write-Ok 'Cosign signature verified'
 }
+{{- end}}
 
 # Verify the SHA-256 checksum of a downloaded asset against checksums.txt.
 #
@@ -350,7 +357,9 @@ function Confirm-Checksum {
 #
 # Parameters:
 #   UserInstall - when true, resolve a user-local path without elevation
+{{- if .Signed}}
 #   NoVerify    - forwarded to the elevated relaunch so -NoVerify is not lost
+{{- end}}
 # Outputs:
 #   PSCustomObject with:
 #     Path          - resolved absolute install directory path
@@ -363,8 +372,9 @@ function Confirm-Checksum {
 #   $script:Binary, $script:GithubRepo, $script:Version
 function Resolve-InstallDir {
     param(
-        [bool]$UserInstall,
+        [bool]$UserInstall{{- if .Signed}},
         [bool]$NoVerify
+{{- end}}
     )
 
     $userDir = Join-Path $env:LOCALAPPDATA "Programs\$script:Binary"
@@ -403,8 +413,10 @@ function Resolve-InstallDir {
                     # Use the same PowerShell edition that is currently running:
                     # pwsh for PowerShell 7+ (Core), powershell for Windows PS 5.1.
                     $psExe    = if ($PSVersionTable.PSEdition -eq 'Core') { 'pwsh' } else { 'powershell' }
+{{- if .Signed}}
                     $extraArg = if ($NoVerify) { ' -NoVerify' } else { '' }
-                    $argList  = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"$extraArg"
+{{- end}}
+                    $argList  = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"{{if .Signed}}$extraArg{{end}}"
                     Start-Process $psExe -Verb RunAs -ArgumentList $argList -Wait
                     exit 0
                 } else {
@@ -502,8 +514,9 @@ function Update-Path {
 function Invoke-Installer {
     param(
         [switch]$User,
-        [switch]$Help,
+        [switch]$Help{{- if .Signed}},
         [switch]$NoVerify
+{{- end}}
     )
 
     if ($Help) { Show-Help; exit 0 }
@@ -525,10 +538,12 @@ function Invoke-Installer {
 {{- end}}
 
         Invoke-DownloadAsset -TmpDir $tmpDir -AssetName $assetName
+{{- if .Signed}}
         Confirm-Signature     -TmpDir $tmpDir -NoVerify $NoVerify.IsPresent
+{{- end}}
         Confirm-Checksum      -TmpDir $tmpDir -AssetName $assetName
 
-        $resolvedInstall = Resolve-InstallDir -UserInstall $User.IsPresent -NoVerify $NoVerify.IsPresent
+        $resolvedInstall = Resolve-InstallDir -UserInstall $User.IsPresent{{if .Signed}} -NoVerify $NoVerify.IsPresent{{end}}
         $installDir = $resolvedInstall.Path
         Install-Binary -TmpDir $tmpDir -AssetName $assetName -InstallDir $installDir
 
@@ -558,7 +573,7 @@ function Invoke-Installer {
 # Parameters are bound by the script-level param() block at the top of the file.
 if ($MyInvocation.InvocationName -ne '.') {
     try {
-        Invoke-Installer -User:$User -Help:$Help -NoVerify:$NoVerify
+        Invoke-Installer -User:$User -Help:$Help{{if .Signed}} -NoVerify:$NoVerify{{end}}
     } catch {
         # Backstop so unhandled errors still print something. Uses Write-Label
         # rather than Exit-Error, which would throw again from inside a catch.
