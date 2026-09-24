@@ -74,8 +74,8 @@ type PlatformEntry struct {
 }
 
 // Config holds the merged configuration from .gpipe.yml and CLI flags.
-// Note: GithubRepo and Version are runtime-only inputs supplied via CLI flags,
-// never read from the config file.
+// Note: GithubRepo, Version and Sign are runtime-only inputs supplied via CLI
+// flags, never read from the config file.
 type Config struct {
 	Binary    string                   `yaml:"binary"`
 	Platforms map[string]PlatformEntry `yaml:"platforms"`
@@ -86,6 +86,11 @@ type Config struct {
 	// GpipeVersion is the gpipe version doing the generating, stamped into the
 	// generated scripts. Defaults to "unknown" when unset.
 	GpipeVersion string
+	// Sign records whether checksums.txt will be cosign-signed after
+	// generation, which decides whether the installers verify a signature.
+	// Tagged out of the YAML: it is a runtime flag, and the strict decoder
+	// must reject sign as a config key rather than read it.
+	Sign bool `yaml:"-"`
 }
 
 // FlagValues holds CLI flag overrides.

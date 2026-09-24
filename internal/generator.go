@@ -54,6 +54,11 @@ type templateData struct {
 	// single-quoting, so one string is interpolated into both templates
 	// unchanged.
 	CosignCertIdentity string
+	// Signed selects the verifying form of the installers. The bundle download
+	// and the cosign check are rendered only when checksums.txt is actually
+	// signed, so an unsigned release never ships an installer that fetches a
+	// bundle the release does not have.
+	Signed bool
 }
 
 // cosignCertIdentity builds the --certificate-identity-regexp value the
@@ -171,6 +176,7 @@ func Generate(cfg *Config, tplFS fs.FS, mode ValidationMode) (*Output, error) {
 		ShPlatforms:        shPlatforms,
 		Ps1Platforms:       ps1Platforms,
 		CosignCertIdentity: cosignCertIdentity(cfg.GithubRepo, cfg.Version),
+		Signed:             cfg.Sign,
 		Hooks: hookContent{
 			PreSh:   preShHook,
 			PostSh:  postShHook,
