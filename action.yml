@@ -16,7 +16,7 @@ inputs:
     required: false
     default: .gpipe.yml
   cosign_sign:
-    description: "Sign checksums.txt with cosign after generation. Requires id-token: write."
+    description: "Sign checksums.txt with cosign after generation and have the installers verify the signature. Requires id-token: write. Without it the installers verify the SHA-256 only."
     required: false
     default: 'false'
 

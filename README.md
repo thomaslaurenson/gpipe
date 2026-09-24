@@ -8,7 +8,7 @@
 
 Generates `install.sh`, `install.ps1`, and `checksums.txt` for GitHub binary releases, so a project can be installed with `curl | bash`. Language-agnostic: it only needs built binaries on disk, whatever produced them.
 
-The generated installers detect the platform, download the release asset, verify its cosign signature and SHA-256, and install the binary.
+The generated installers detect the platform, download the release asset, verify its SHA-256 and, for a signed release, its cosign signature, and install the binary.
 
 ## Quick start
 
@@ -118,7 +118,7 @@ Each generated script carries only the platforms it can install, so `install.sh`
 | `version` | `${{ github.ref_name }}` | Release version tag |
 | `repo` | `${{ github.repository }}` | `owner/repo` |
 | `config` | `.gpipe.yml` | Config path relative to repo root |
-| `cosign_sign` | `false` | Sign `checksums.txt`; needs `id-token: write` |
+| `cosign_sign` | `false` | Sign `checksums.txt` and have the installers verify the signature; needs `id-token: write` |
 
 The action builds gpipe from its own checkout, so `@v1` gets the latest v1.x and `@v1.4.0` pins exactly. It needs Go on the runner, which GitHub-hosted runners provide.
 
@@ -134,7 +134,7 @@ Install it with `curl -fsSL https://github.com/thomaslaurenson/gpipe/releases/la
 
 `--repo` and `--version` fall back to the git remote and `git describe --tags`, printing what they detected. `validate` checks the config without generating; `--dry-run` generates without needing every binary present.
 
-`checksums.txt` covers `install.sh` and `install.ps1` themselves and is cosign-signed, so an installer can be verified before it is run. The generated `install.sh` carries the exact `cosign verify-blob` invocation, identity regexp included, in its `verify_signature` function.
+`checksums.txt` covers `install.sh` and `install.ps1` themselves, so an installer can be verified before it is run. With `--sign` it is also cosign-signed and the installers check the signature before the checksum: when cosign is installed the check runs, when it is not the installer warns and continues with the checksum alone, and `--no-verify` skips it even when cosign is present. Without `--sign` the installers verify the SHA-256 only and carry no signature step. The generated `install.sh` carries the exact `cosign verify-blob` invocation, identity regexp included, in its `verify_signature` function.
 
 ## Hooks
 

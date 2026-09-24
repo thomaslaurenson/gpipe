@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.5.0 - 2026-09-24
+
+### Changed
+
+- Warn and continue with the checksum check when cosign is not installed
+
+### Fixed
+
+- Generate installers without a signature step for unsigned releases
+
 ## 1.4.1 - 2026-08-11
 
 ### Fixed
