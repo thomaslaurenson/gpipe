@@ -143,8 +143,8 @@ func TestGenerate_MultiplePlatformsChecksumOrder(t *testing.T) {
 	}
 }
 
-// Completions and dotfile PATH rewriting were removed in 1.4.0. Both wrote to
-// files the user did not ask the installer to touch, so their absence is
+// The installers write no shell completions and edit no dotfiles. Both would
+// touch files the user did not ask the installer to touch, so their absence is
 // asserted rather than left to the templates.
 func TestGenerate_NoCompletionsOrDotfileWrites(t *testing.T) {
 	t.Parallel()

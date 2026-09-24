@@ -56,9 +56,9 @@ platforms:
 	}
 }
 
-// The 1.4.0 removals (install-name, sign, completions) rely on strict decoding to
-// surface as an error naming the offending key, rather than being silently
-// ignored the way a non-strict decoder would.
+// None of install-name, sign and completions is a config key. Strict decoding
+// is what makes each an error naming the offending key rather than one a
+// non-strict decoder would silently ignore.
 func TestLoadConfig_RemovedKeysRejected(t *testing.T) {
 	t.Parallel()
 	for _, key := range []string{"install-name: cli", "sign: true", "completions:\n  bash: true"} {

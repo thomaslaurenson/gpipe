@@ -326,8 +326,8 @@ setup() {
   [[ "${output}" =~ "export PATH=" ]]
 }
 
-# The whole point of the v2 trim: report, never edit. A dotfile the user did
-# not ask the installer to touch must come out of a full run untouched.
+# manage_path reports and never edits: a dotfile the user did not ask the
+# installer to touch must come out of a full run untouched.
 @test "manage_path: writes to no shell profile" {
   INSTALL_DIR="${BATS_TEST_TMPDIR}/unreachable"
   mkdir -p "${INSTALL_DIR}"

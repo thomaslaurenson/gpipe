@@ -119,8 +119,7 @@ func LoadConfig(path string) (*Config, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 	// An empty (or comment/whitespace-only) file decodes as io.EOF rather
-	// than populating cfg; treat that the same as "no fields set", matching
-	// the previous yaml.Unmarshal behaviour instead of surfacing an error.
+	// than populating cfg. That is a config with no fields set, not an error.
 	if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("parsing config file: %w", err)
 	}
