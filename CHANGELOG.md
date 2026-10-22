@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.5.1 - 2026-10-23
+
+### Updated
+
+- Build the action and release binaries with the newest Go 1.27 patch release
+- Update dependencies
+
 ## 1.5.0 - 2026-09-24
 
 ### Changed
