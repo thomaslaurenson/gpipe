@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.2 - 2026-11-20
+
+### Fixed
+
+- Stamp installers with the commit SHA when the action is pinned to one
+
+### Updated
+
+- Bump cosign-installer to 4.1.3
+- Build with the newest Go patch even when the runner has an older one cached
+
 ## 1.5.1 - 2026-10-23
 
 ### Updated

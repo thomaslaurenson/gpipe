@@ -101,6 +101,10 @@ type hookContent struct {
 	PostPs1 string
 }
 
+// commitSHAPattern matches the full commit SHA that github.action_ref holds
+// when a caller pins the action with uses: thomaslaurenson/gpipe@<sha>.
+var commitSHAPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
 // stampVersion normalises a gpipe version for the Gpipe-Version header.
 //
 // The build stamps cmd.Version from goreleaser's .Version, which is the release
@@ -109,11 +113,14 @@ type hookContent struct {
 // Release-Version, so the v is added back here.
 //
 // Only versions starting with a digit are prefixed, leaving non-tag values
-// ("dev" from a plain go build, "unknown" below, or the already-prefixed output
-// of git describe) as they are.
+// ("dev" from a plain go build, "unknown" below, the already-prefixed output
+// of git describe, or the commit SHA of an action pinned to one) as they are.
 func stampVersion(version string) string {
 	if version == "" {
 		return "unknown"
+	}
+	if commitSHAPattern.MatchString(version) {
+		return version
 	}
 	if c := version[0]; c >= '0' && c <= '9' {
 		return "v" + version
