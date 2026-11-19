@@ -48,7 +48,8 @@ runs:
     #
     # GOTOOLCHAIN=local pins the build to the Go installed above. Version is
     # stamped from github.action_ref so the Gpipe-Version header records what
-    # the caller pinned, and is empty for a local (uses: ./) checkout.
+    # the caller pinned, a tag or a commit SHA, and is empty for a local
+    # (uses: ./) checkout.
     - name: Build gpipe
       shell: bash
       working-directory: ${{ github.action_path }}

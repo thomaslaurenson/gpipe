@@ -422,6 +422,8 @@ func TestGenerate_GpipeVersionStampIsTagPrefixed(t *testing.T) {
 		{name: "unprefixed snapshot", given: "1.2.1-dev", want: "v1.2.1-dev"},
 		{name: "already prefixed from git describe", given: "v1.4.2", want: "v1.4.2"},
 		{name: "plain go build", given: "dev", want: "dev"},
+		{name: "action pinned to a major tag", given: "v1", want: "v1"},
+		{name: "action pinned to a commit SHA", given: "756fe2d284c7292c4e9b62c8a28f1e5629c59532", want: "756fe2d284c7292c4e9b62c8a28f1e5629c59532"},
 	}
 
 	for _, tc := range tests {
