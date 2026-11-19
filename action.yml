@@ -33,10 +33,13 @@ runs:
     # go-version-file is action_path-qualified because setup-go resolves paths
     # against the caller's workspace, not this action's directory; cache is off
     # for the same reason, since its key would come from the caller's go.sum.
+    # check-latest stops a Go cached on the runner image standing in for the
+    # newest patch of the go.mod version.
     - name: Set up Go
       uses: actions/setup-go@v7
       with:
         go-version-file: ${{ github.action_path }}/go.mod
+        check-latest: true
         cache: false
 
     # Built from this action's own checkout: github.action_path holds gpipe at
